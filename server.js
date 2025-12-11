@@ -13,25 +13,32 @@ const client = new OpenAI({
 app.use(cors());
 app.use(express.json());
 
+// Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/chat", (req, res) => {
+// AI Chat Route
+app.post("/chat", async (req, res) => {
   console.log("Received /chat request with body:", req.body);
 
-  const { message, language = "en", programsSelected = [] } = req.body;
+  try {
+    const { message, language = "en", programsSelected = [] } = req.body;
 
-  res.json({
-    reply: `Echo: "${message}". Language: ${language}. Programs: ${
-      programsSelected.join(", ") || "none"
-    }.`
-  });
-});
+    if (!message) {
+      return res.status(400).json({ error: "Missing 'message' in request body" });
+    }
 
+    const systemPrompt = `
+You are an enrollment assistant for a healthcare training school.
+You respond in the user's preferred language: ${language}.
+Programs of interest: ${programsSelected.join(", ") || "none"}.
+Answer briefly, clearly, and always encourage them to enroll.
+If you don't know something, say a staff member will follow up.
+`;
 
-    const response = client.responses.create({
-      model: "gpt-4.1-mini", // or another model available to your account
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini", // or any model you choose
       input: [
         {
           role: "system",
@@ -51,7 +58,6 @@ app.post("/chat", (req, res) => {
 
     console.log("OpenAI raw response:", JSON.stringify(response, null, 2));
 
-    // Safely extract the reply text
     let replyText = "";
 
     if (response.output_text) {
@@ -75,7 +81,7 @@ app.post("/chat", (req, res) => {
   }
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
