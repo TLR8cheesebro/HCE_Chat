@@ -17,24 +17,18 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/chat", async (req, res) => {
+app.post("/chat", (req, res) => {
   console.log("Received /chat request with body:", req.body);
 
-  try {
-    const { message, language = "en", programsSelected = [] } = req.body;
+  const { message, language = "en", programsSelected = [] } = req.body;
 
-    // Guard: if no message, respond immediately
-    if (!message) {
-      return res.status(400).json({ error: "Missing 'message' in request body" });
-    }
+  res.json({
+    reply: `Echo: "${message}". Language: ${language}. Programs: ${
+      programsSelected.join(", ") || "none"
+    }.`
+  });
+});
 
-    const systemPrompt = `
-You are an enrollment assistant for a healthcare training school.
-You respond in the user's preferred language: ${language}.
-Programs of interest: ${programsSelected.join(", ") || "none"}.
-Answer briefly, clearly, and always encourage them to enroll.
-If you don't know something (like specific schedule dates), say that a staff member will follow up.
-`;
 
     const response = await client.responses.create({
       model: "gpt-4.1-mini", // or another model available to your account
