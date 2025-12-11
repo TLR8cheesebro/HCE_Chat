@@ -30,7 +30,7 @@ app.post("/chat", (req, res) => {
 });
 
 
-    const response = await client.responses.create({
+    const response = client.responses.create({
       model: "gpt-4.1-mini", // or another model available to your account
       input: [
         {
