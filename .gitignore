@@ -1,2 +1,4 @@
 alicia_keys
 alicia_keys.pub
+node_modules
+.env
