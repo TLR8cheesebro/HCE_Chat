@@ -12,6 +12,7 @@ const client = new OpenAI({
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
 
 // Health check
 app.get("/health", (req, res) => {
