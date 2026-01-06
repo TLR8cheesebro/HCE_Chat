@@ -306,49 +306,45 @@ function inferProgramTagFromPath(pathParts) {
 }
 
 async function walkFolder(drive, folderId, pathParts = []) {
+  console.log("Walking this folder -> " + folderId);
+  console.log("")
   const children = await listAllChildren(drive, folderId);
 
   const docs = [];
-  let programsText = null;
-  let languagesText = null;
   let trainingProgramsText = null;
   let courseIndexText = null;
+  let languagesText = null;
 
   for (const item of children) {
     if (item.mimeType === "application/vnd.google-apps.folder") {
       const sub = await walkFolder(drive, item.id, [...pathParts, item.name]);
       docs.push(...sub.docs);
-      if (sub.programsText) programsText = programsText || sub.programsText;
+
+      if (sub.trainingProgramsText) trainingProgramsText = trainingProgramsText || sub.trainingProgramsText;
+      if (sub.courseIndexText) courseIndexText = courseIndexText || sub.courseIndexText;
       if (sub.languagesText) languagesText = languagesText || sub.languagesText;
       continue;
     }
 
     const nameLower = normalizeName(item.name);
 
-    // Convention: staff keeps a programs list file named programs.txt (or .md/.csv/.gsheet)
-    const isProgramsList =
-      nameLower === "Training Programs" ||
-      nameLower === "Training Programs.txt" ||
-      nameLower === "Training Programs.md" ||
-      nameLower === "Training Programs.csv" ||
-      nameLower.includes("Training Programs");
+    const isTrainingProgramsList =
+      nameLower === "training programs" ||
+      nameLower.includes("training programs");
 
-    const isCourseIndex = 
+    const isCourseIndex =
       nameLower === "chat agent - course index" ||
-      nameLower === "chat agent - course index.csv" ||
       nameLower.includes("chat agent - course index");
 
-
-
-    // Convention: staff can optionally keep a languages file languages.txt (code|label)
     const isLanguagesList =
-      nameLower === "languages.txt" || nameLower === "languages.md" || nameLower.includes("language list");
+      nameLower === "languages.txt" ||
+      nameLower === "languages.md" ||
+      nameLower.includes("language list");
 
     const text = await downloadText(drive, item);
 
-    if (isProgramsList) {
-      programsText = text;
-      // Also keep as a doc, since it's useful to the model
+    if (isTrainingProgramsList) {
+      trainingProgramsText = text;
       docs.push({
         id: item.id,
         name: item.name,
@@ -362,7 +358,6 @@ async function walkFolder(drive, folderId, pathParts = []) {
 
     if (isCourseIndex) {
       courseIndexText = text;
-
       docs.push({
         id: item.id,
         name: item.name,
@@ -371,6 +366,7 @@ async function walkFolder(drive, folderId, pathParts = []) {
         programTag: null,
         modifiedTime: item.modifiedTime,
       });
+      continue;
     }
 
     if (isLanguagesList) {
@@ -386,7 +382,6 @@ async function walkFolder(drive, folderId, pathParts = []) {
       continue;
     }
 
-    // Ignore empty / unsupported files
     if (!text || !text.trim()) continue;
 
     const programTag = inferProgramTagFromPath(pathParts);
@@ -400,8 +395,9 @@ async function walkFolder(drive, folderId, pathParts = []) {
     });
   }
 
-  return { docs, trainingProgramsText, courseIndexText, programsText, languagesText };
+  return { docs, trainingProgramsText, courseIndexText, languagesText };
 }
+
 
 async function loadKnowledgeBase({ force = false } = {}) {
   const now = Date.now();
@@ -424,13 +420,14 @@ async function loadKnowledgeBase({ force = false } = {}) {
       }
 
       const drive = await getDriveClient();
+      console.log("Did I load a client successfully???" + drive);
       
-      const { docs, programsText, languagesText } = await walkFolder(drive, DRIVE_FOLDER_ID, []);
+      const { docs, trainingProgramsText, languagesText, courseIndexText } = await walkFolder(drive, DRIVE_FOLDER_ID, []);
       const programs = trainingProgramsText
         ? parseProgramsFromText(trainingProgramsText)
         : kbCache.programs;
 
-      const courses = courseIndexTest
+      const courses = courseIndexText
         ? parseCourseIndexFromCSV(courseIndexText)
         : kbCache.courses;
       
