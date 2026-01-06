@@ -310,7 +310,6 @@ function inferProgramTagFromPath(pathParts) {
 
 async function walkFolder(drive, folderId, pathParts = []) {
   console.log("Walking this folder -> " + folderId);
-  console.log(`[KB] Found: ${item.name ($item.mimetype)}`);
   const children = await listAllChildren(drive, folderId);
 
   const docs = [];
@@ -319,6 +318,7 @@ async function walkFolder(drive, folderId, pathParts = []) {
   let languagesText = null;
 
   for (const item of children) {
+    console.log(`[KB] Found: ${item.name ($item.mimetype)}`);
     if (item.mimeType === "application/vnd.google-apps.folder") {
       const sub = await walkFolder(drive, item.id, [...pathParts, item.name]);
       docs.push(...sub.docs);
