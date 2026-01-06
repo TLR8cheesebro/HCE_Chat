@@ -310,7 +310,7 @@ function inferProgramTagFromPath(pathParts) {
 
 async function walkFolder(drive, folderId, pathParts = []) {
   console.log("Walking this folder -> " + folderId);
-  console.log(`[KB] Found: ${item.name ($item.mimetype)}`)
+  console.log(`[KB] Found: ${item.name ($item.mimetype)}`);
   const children = await listAllChildren(drive, folderId);
 
   const docs = [];
