@@ -260,39 +260,42 @@ async function listAllChildren(drive, folderId) {
   return all;
 }
 
-async function downloadText(drive, file) {
-  // Google Docs
-  if (file.mimeType === "application/vnd.google-apps.document") {
-    const res = await drive.files.export(
-      { fileId: file.id, mimeType: "text/plain" },
-      { responseType: "arraybuffer" }
-    );
-    return Buffer.from(res.data).toString("utf8");
+async function downloadText(drive, item) {
+  const mime = item.mimeType || "";
+
+  try {
+    // Google Doc → export as plain text
+    if (mime === "application/vnd.google-apps.document") {
+      const res = await drive.files.export(
+        { fileId: item.id, mimeType: "text/plain", supportsAllDrives: true },
+        { responseType: "text" }
+      );
+      return typeof res.data === "string" ? res.data : "";
+    }
+
+    // Google Sheet → export as CSV (first sheet)
+    if (mime === "application/vnd.google-apps.spreadsheet") {
+      const res = await drive.files.export(
+        { fileId: item.id, mimeType: "text/csv", supportsAllDrives: true },
+        { responseType: "text" }
+      );
+      return typeof res.data === "string" ? res.data : "";
+    }
+
+    // Normal files (txt/md/csv/etc)
+    const res = await drive.files.get({
+      q: `'${folderId}' in parents and trashed=false`,
+      fields: `files(id,name,mimeType,modifiedTime),nextPageToken`,
+      pageSize: 1000,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+  });
+
+    return typeof res.data === "string" ? res.data : JSON.stringify(res.data || "");
+  } catch (err) {
+    console.warn(`[KB] downloadText failed for "${item.name}" (${mime}):`, err?.message || err);
+    return "";
   }
-
-  // Google Sheets (export CSV)
-  if (file.mimeType === "application/vnd.google-apps.spreadsheet") {
-    const res = await drive.files.export(
-      { fileId: file.id, mimeType: "text/csv" },
-      { responseType: "arraybuffer" }
-    );
-    return Buffer.from(res.data).toString("utf8");
-  }
-
-  // Plain text-ish
-  const isTextLike =
-    (file.mimeType && file.mimeType.startsWith("text/")) ||
-    /\.(txt|md|csv|json)$/i.test(file.name || "");
-
-  if (isTextLike) {
-    const res = await drive.files.get(
-      { fileId: file.id, alt: "media" },
-      { responseType: "arraybuffer" }
-    );
-    return Buffer.from(res.data).toString("utf8");
-  }
-
-  return "";
 }
 
 function inferProgramTagFromPath(pathParts) {
@@ -307,7 +310,7 @@ function inferProgramTagFromPath(pathParts) {
 
 async function walkFolder(drive, folderId, pathParts = []) {
   console.log("Walking this folder -> " + folderId);
-  console.log("")
+  console.log(`[KB] Found: ${item.name ($item.mimetype)}`)
   const children = await listAllChildren(drive, folderId);
 
   const docs = [];
