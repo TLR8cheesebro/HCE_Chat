@@ -10,11 +10,31 @@
   <div id="chat-widget">
     <div id="chat-header">Healthcare-Edu AI Course Specialist</div>
 
-    <div id="chat-messages"></div>
+    <!-- Pre-chat screening -->
+    <div id="prechat" role="dialog" aria-modal="true" aria-label="Pre-chat questions">
+      <div class="prechat-card">
+        <h2 class="prechat-title">Before we start, please answer these questions.</h2>
+
+        <div class="prechat-section">
+          <div class="prechat-label">Which language do you prefer to speak?</div>
+          <div id="language-options" class="option-grid" aria-label="Language options"></div>
+        </div>
+
+        <div class="prechat-section">
+          <div class="prechat-label">Which training program are you interested in?</div>
+          <div class="prechat-subtext">Select all that apply.</div>
+          <div id="program-options" class="option-grid" aria-label="Program options"></div>
+        </div>
+
+        <button id="start-chat" class="primary-btn" disabled>Start chat</button>
+      </div>
+    </div>
+
+    <div id="chat-messages" aria-live="polite"></div>
 
     <div id="chat-input-area">
-      <input id="chat-input" type="text" placeholder="Ask me anything about our courses..." />
-      <button id="chat-send">➤</button>
+      <input id="chat-input" type="text" placeholder="Ask me anything about our courses..." disabled />
+      <button id="chat-send" disabled>➤</button>
     </div>
   </div>
 

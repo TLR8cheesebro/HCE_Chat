@@ -1,46 +1,67 @@
+/* Make the widget behave well inside an iframe (no 100vh!) */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
 body {
   height: 100%;
-  overflow: hidden;
+  width: 100%;
   margin: 0;
+  padding: 0;
+  overflow: hidden; /* prevents iframe scrollbars */
   font-family: Arial, sans-serif;
-  background: #f5f5f5;
+  background: transparent;
 }
 
 #chat-widget {
+  position: relative;
   width: 100%;
-  height: 100vh;
+  height: 100%;      /* fill iframe container */
   display: flex;
   flex-direction: column;
   background: #ffffff;
-  border: 1px solid #ddd;
 }
 
+/* Header */
 #chat-header {
-  padding: 16px;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px 16px;
   background: #db31c9;
   color: white;
   font-weight: bold;
-  font-size: 18px;
+  font-size: 16px;
+  line-height: 1.2;
   text-align: center;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Messages area */
 #chat-messages {
-  flex: 1;
-  padding: 16px;
+  flex: 1 1 auto;
+  padding: 12px;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 
+/* Message bubbles */
 .message {
-  max-width: 75%;
+  max-width: 85%;
   padding: 12px;
   border-radius: 12px;
   font-size: 15px;
   line-height: 1.4;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .user-message {
@@ -53,30 +74,44 @@ body {
   align-self: flex-start;
 }
 
+/* Input */
 #chat-input-area {
   display: flex;
+  gap: 8px;
   border-top: 1px solid #ddd;
-  padding: 10px;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom)) 10px;
   background: #fafafa;
+  flex: 0 0 auto;
 }
 
 #chat-input {
   flex: 1;
-  padding: 10px;
-  border-radius: 6px;
+  padding: 12px;
+  border-radius: 10px;
   border: 1px solid #ccc;
-  font-size: 15px;
+  font-size: 16px;   /* prevents iOS zoom */
+  min-height: 44px;  /* comfortable tap target */
+}
+
+#chat-input:disabled {
+  opacity: 0.7;
 }
 
 #chat-send {
-  margin-left: 8px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 10px 14px;
   background: #ffb217;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 18px;
+}
+
+#chat-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 #chat-send:hover {
@@ -87,4 +122,104 @@ body {
 .loading {
   font-style: italic;
   opacity: 0.8;
+}
+
+/* -----------------------
+   Pre-chat overlay
+------------------------ */
+#prechat {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.98);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+#prechat.hidden {
+  display: none;
+}
+
+.prechat-card {
+  width: 100%;
+  max-width: 520px;
+  background: #ffffff;
+  border: 1px solid #e6e6e6;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.prechat-title {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+}
+
+.prechat-section {
+  margin-top: 14px;
+}
+
+.prechat-label {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.prechat-subtext {
+  font-size: 13px;
+  opacity: 0.8;
+  margin-bottom: 8px;
+}
+
+.option-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.option-btn {
+  appearance: none;
+  border: 1px solid #d0d0d0;
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 10px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.option-btn.selected {
+  background: #ffb217;
+  border-color: #ffb217;
+  color: #ffffff;
+}
+
+.primary-btn {
+  width: 100%;
+  margin-top: 16px;
+  min-height: 46px;
+  border-radius: 12px;
+  border: none;
+  background: #db31c9;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.muted {
+  opacity: 0.7;
+  font-size: 14px;
+}
+
+/* Slightly tighter on very small devices */
+@media (max-width: 360px) {
+  .message { max-width: 92%; }
+  #chat-header { font-size: 15px; }
 }
