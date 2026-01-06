@@ -242,9 +242,8 @@ async function getDriveClient() {
 }
 
 async function listAllChildren(drive, folderId) {
-  // Handles pagination
+  let files = [];
   let pageToken = undefined;
-  const all = [];
 
   do {
     const res = await drive.files.list({
@@ -252,13 +251,21 @@ async function listAllChildren(drive, folderId) {
       fields: "nextPageToken, files(id,name,mimeType,modifiedTime)",
       pageSize: 1000,
       pageToken,
+
+      // These two are essential for Shared Drives + “Shared with me”
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
     });
-    all.push(...(res.data.files || []));
-    pageToken = res.data.nextPageToken;
+
+    const batch = res.data.files || [];
+    files.push(...batch);
+    pageToken = res.data.nextPageToken || undefined;
   } while (pageToken);
 
-  return all;
+  console.log(`[KB] listAllChildren(${folderId}) -> ${files.length} files`);
+  return files;
 }
+
 
 async function downloadText(drive, item) {
   const mime = item.mimeType || "";
@@ -311,6 +318,7 @@ function inferProgramTagFromPath(pathParts) {
 async function walkFolder(drive, folderId, pathParts = []) {
   console.log("Walking this folder -> " + folderId);
   const children = await listAllChildren(drive, folderId);
+  console.log(`[KB] children count in ${folderId}: ${children.length}`);
 
   const docs = [];
   let trainingProgramsText = null;
@@ -318,7 +326,7 @@ async function walkFolder(drive, folderId, pathParts = []) {
   let languagesText = null;
 
   for (const item of children) {
-    console.log(`[KB] Found: ${item.name ($item.mimetype)}`);
+    console.log(`[KB] Found: ${item.name} (${item.mimeType})`);
     if (item.mimeType === "application/vnd.google-apps.folder") {
       const sub = await walkFolder(drive, item.id, [...pathParts, item.name]);
       docs.push(...sub.docs);
