@@ -218,8 +218,9 @@ function parseLanguagesFromText(text = "") {
       parsed.push({ code: parts[0], label: parts[1] });
     }
   }
-  return parsed.length ? parsed : DEFAULT_LANGUAGES;
+
   console.log("These are the languages parsed" + parsed);
+  return parsed.length ? parsed : DEFAULT_LANGUAGES;
 }
 
 async function getDriveClient() {
