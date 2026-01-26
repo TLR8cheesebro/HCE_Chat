@@ -26,9 +26,8 @@ Accepts:
 
 ---
 
-## Current Project Status
+## Current Project Status Below
 
-Here’s where things *actually* stand, stripped of wishful thinking and buzzwords:
 
 ### What Is Fully Working
 
@@ -67,4 +66,5 @@ Here’s where things *actually* stand, stripped of wishful thinking and buzzwor
 - No analytics or conversation logging
 - No rate limiting
 - No authentication (public-facing by design)
+
 
