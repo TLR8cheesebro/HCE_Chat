@@ -22,14 +22,11 @@ Accepts:
   "language": "en",
   "programsSelected": ["CNA", "Phlebotomy"]
 }
+```
 
+### Current Project Status Below
 
----
-
-## Current Project Status Below
-
-
-### What Is Fully Working
+## What Is Fully Working
 
 - **Backend API**
   - Express server is stable and cleanly structured :contentReference[oaicite:0]{index=0}
@@ -50,7 +47,7 @@ Accepts:
   - `/chat` → grounded AI responses
   - Render deployment already wired and live
 
-### What Is Partially Complete
+## What Is Partially Complete
 
 - **Knowledge relevance**
   - Uses keyword scoring and chunking (simple but effective)
@@ -60,11 +57,9 @@ Accepts:
   - Safe fallbacks exist
   - Logging is dev-friendly, not ops-grade yet
 
-### What Is *Not* Done (But Also Not Broken)
+## What Is *Not* Done (But Also Not Broken)
 
 - No admin UI for KB validation (Drive is the “UI”)
 - No analytics or conversation logging
 - No rate limiting
 - No authentication (public-facing by design)
-
-
