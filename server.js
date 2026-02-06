@@ -973,10 +973,7 @@ Conversation objective:
 2) Provide a clear gameplan for successful completion (online work, in-person labs/clinical if applicable).
 3) Present payment options. Prefer paying in full by mentioning the discount, but if cost is a barrier, offer the payment plan if available.
 4) End by asking if they are ready to enroll or have questions.
-`
-//next round of implementation, I will make payment index give a link the agent can give to the student for them to enroll. 
-`
-5) When a student says they are ready to enroll, direct them to the correct
+5) When a student says they are ready to enroll, direct them to the use the website in to pay with their preferred method.
 
 Always respond in the user's preferred language (language code): ${language}.
 
