@@ -3,13 +3,21 @@ const cors = require("cors");
 require("dotenv").config();
 const OpenAI = require("openai");
 
-// Optional Google Drive knowledge base integration
 let google;
 try {
-  // Only required if you enable Google Drive KB
   google = require("googleapis").google;
 } catch (e) {
   google = null;
+}
+
+// New modules (Group A)
+const { recommendCourses, normalizeGoals } = require("./recommendation");
+const { selectBestTwo } = require("./schedules");
+let wix;
+try {
+  wix = require("./wixConnection");
+} catch (e) {
+  wix = null;
 }
 
 const app = express();
@@ -27,12 +35,10 @@ app.use(express.static("public"));
 // Knowledge Base (Google Drive)
 // -----------------------------
 
-// You can tune these in Render env vars
 const KB_CACHE_TTL_MS = Number(process.env.KB_CACHE_TTL_MS || 5 * 60 * 1000); // 5 minutes
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID || "";
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
 
-// Fallback config if Drive is not configured
 const DEFAULT_LANGUAGES = [
   { code: "en", label: "English" },
   { code: "es", label: "Español" },
@@ -40,17 +46,27 @@ const DEFAULT_LANGUAGES = [
   { code: "ht", label: "Kreyòl Ayisyen" },
 ];
 
+// Discount amount (compliance: always call it a "discount")
+const PAY_IN_FULL_DISCOUNT_AMOUNT = Number(process.env.PAY_IN_FULL_DISCOUNT_AMOUNT || 200);
+const DEFAULT_DOWN_PAYMENT_PERCENT = Number(process.env.DOWN_PAYMENT_PERCENT || 10);
+
+// Env toggles
+const ENABLE_WIX_SYNC = String(process.env.ENABLE_WIX_SYNC || "true").toLowerCase() === "true";
+const ENABLE_WIX_SCHEDULES = String(process.env.ENABLE_WIX_SCHEDULES || "true").toLowerCase() === "true";
+
 let kbCache = {
   loadedAt: 0,
-  loading: null, // promise
-  // docs: [{ id, name, path, text, programTag, modifiedTime }]
+  loading: null,
   docs: [],
   programs: [],
   courses: [],
   languages: DEFAULT_LANGUAGES,
+  paymentIndex: [],
   source: "default",
   lastError: null,
 };
+
+// Helpers
 
 function normalizeName(s = "") {
   return String(s).toLowerCase().trim();
@@ -58,6 +74,10 @@ function normalizeName(s = "") {
 
 function uniq(arr) {
   return Array.from(new Set(arr.filter(Boolean)));
+}
+
+function norm(s = "") {
+  return String(s).trim().toLowerCase();
 }
 
 function parseCSV(text = "") {
@@ -70,10 +90,21 @@ function parseCSV(text = "") {
     const ch = text[i];
     const next = text[i + 1];
 
-    if (ch === '"' && inQuotes && next === '"') { cell += '"'; i++; continue; }
-    if (ch === '"') { inQuotes = !inQuotes; continue; }
+    if (ch === '"' && inQuotes && next === '"') {
+      cell += '"';
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
 
-    if (ch === "," && !inQuotes) { row.push(cell); cell = ""; continue; }
+    if (ch === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
 
     if ((ch === "\n" || ch === "\r") && !inQuotes) {
       if (ch === "\r" && next === "\n") i++;
@@ -87,17 +118,27 @@ function parseCSV(text = "") {
     cell += ch;
   }
 
-  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  if (cell.length || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
   return rows;
 }
 
-function norm(s = "") { return String(s).trim().toLowerCase(); }
+function parseBool(v) {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return false;
+  return ["true", "yes", "1", "y"].includes(s);
+}
 
+// end helpers :)
+
+// -------- Course Index (CSV from Google Sheet export) --------
 function parseCourseIndexFromCSV(csvText = "") {
-  const rows = parseCSV(csvText).filter(r => r.some(c => String(c || "").trim().length));
+  const rows = parseCSV(csvText).filter((r) => r.some((c) => String(c || "").trim().length));
   if (!rows.length) return [];
-
-  const header = rows[0].map(h => norm(h));
+  console.log("Beginning logic for course index . . .")
+  const header = rows[0].map((h) => norm(h));
   const idx = (name) => header.indexOf(norm(name));
 
   const iCode = idx("course_code");
@@ -105,6 +146,9 @@ function parseCourseIndexFromCSV(csvText = "") {
   const iCerts = idx("certificates_included");
   const iLink = idx("link");
   const iPriority = idx("priority");
+  const iDiscount = idx("pif_discount_available");
+  
+  console.log("Course code used in Course Index" + iCode);
 
   if (iCode < 0 || iName < 0 || iCerts < 0) return [];
 
@@ -115,96 +159,109 @@ function parseCourseIndexFromCSV(csvText = "") {
     const certRaw = (r[iCerts] || "").trim();
     if (!course_code || !course_name || !certRaw) continue;
 
-    const certificates = certRaw.split(",").map(x => x.trim()).filter(Boolean);
+    const certificates = certRaw
+      .toLowerCase()
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+
     const link = iLink >= 0 ? (r[iLink] || "").trim() : "";
     const priority = iPriority >= 0 ? Number(String(r[iPriority] || "").trim()) : 999;
+    const pif_discount_available = iDiscount >= 0 ? parseBool(r[iDiscount]) : false;
 
     courses.push({
       course_code,
       course_name,
-      certificates,
+      certificates_included: certificates, // normalized lower-case tokens
       link,
       priority: Number.isFinite(priority) ? priority : 999,
+      pif_discount_available,
     });
+    console.log("course index logic complete;" + courses);
   }
   return courses;
 }
 
-function recommendCourses(selectedCerts = [], courses = [], maxCourses = 3) {
-  const selected = (selectedCerts || [])
-    .map(s => String(s).trim())
-    .filter(Boolean)
-    .filter(s => norm(s) !== "not sure yet");
+// -------- Payment Index (CSV from Google Sheet export) --------
+function parsePaymentIndexFromCSV(csvText = "") {
+  
+  console.log("Beginning Payment Index Logic . . .");
 
-  const selectedSet = new Set(selected.map(norm));
-  if (!selectedSet.size || !courses.length) return [];
+  const rows = parseCSV(csvText).filter((r) => r.some((c) => String(c || "").trim().length));
+  if (!rows.length) return [];
 
-  // 1) Perfect match: covers all selected certs
-  const perfect = courses
-    .map(c => {
-      const certSet = new Set((c.certificates || []).map(norm));
-      const all = [...selectedSet].every(x => certSet.has(x));
-      const overlap = [...selectedSet].filter(x => certSet.has(x)).length;
-      return { c, all, overlap };
-    })
-    .filter(x => x.all)
-    .sort((a,b) => (a.c.priority - b.c.priority) || (b.overlap - a.overlap));
+  const header = rows[0].map((h) => norm(h));
+  const idx = (name) => header.indexOf(norm(name));
 
-  if (perfect.length) return [perfect[0].c];
+  const iCode = idx("course_code");
+  const iTuition = idx("tuition_price");
+  const iDiscount = idx("paidinfull_discountapplicable");
+  const iPlanApplicable = idx("paymentplan_applicable");
+  const iWeeks = idx("planlength_weeks");
+  const iFreq = idx("frequency");
+  const iOverride = idx("CUSTOM_OVERRIDE");
 
-  // 2) Greedy cover: fewest/highest overlap, tie-break by priority
-  const remaining = new Set([...selectedSet]);
-  const picked = [];
-
-  while (remaining.size && picked.length < maxCourses) {
-    let best = null;
-
-    for (const c of courses) {
-      const certSet = new Set((c.certificates || []).map(norm));
-      const overlap = [...remaining].filter(x => certSet.has(x)).length;
-      if (overlap <= 0) continue;
-
-      if (!best) best = { c, overlap };
-      else if (overlap > best.overlap) best = { c, overlap };
-      else if (overlap === best.overlap && c.priority < best.c.priority) best = { c, overlap };
-    }
-
-    if (!best) break;
-    picked.push(best.c);
-    for (const cert of best.c.certificates || []) remaining.delete(norm(cert));
+  console.log("Course code used in Payment Index" + iCode);
+  
+  // ovveride for plans deemed to complex for the AI
+  if (iOverride == true) {
+    console.log("Override detected; This is where I would begin override protocol but i'm not built out yet :)")
   }
 
-  return picked;
+  if (iCode < 0 || iTuition < 0 || iDiscount < 0 || iPlanApplicable < 0 || iWeeks < 0 || iFreq < 0) {
+    return [];
+  }
+
+  const out = [];
+  for (const r of rows.slice(1)) {
+    const course_code = String(r[iCode] || "").trim();
+    if (!course_code) continue;
+
+    const tuitionPrice = Number(String(r[iTuition] || "").trim());
+    if (!Number.isFinite(tuitionPrice) || tuitionPrice <= 0) continue;
+
+    const discountApplicable = parseBool(r[iDiscount]);
+    const paymentPlanApplicable = parseBool(r[iPlanApplicable]);
+    const planLengthWeeks = Number(String(r[iWeeks] || "").trim());
+    const frequency = String(r[iFreq] || "").trim().toLowerCase();
+
+    out.push({
+      course_code,
+      tuitionPrice: Math.round(tuitionPrice),
+      discountApplicable,
+      paymentPlanApplicable,
+      planLengthWeeks: Number.isFinite(planLengthWeeks) ? Math.round(planLengthWeeks) : 10,
+      frequency: frequency === "biweekly" ? "biweekly" : "weekly",
+    });
+  }
+  return out;
 }
 
+//pre-screening helpers
+
 function parseProgramsFromText(text = "") {
-  // Supports simple line list, bullets, or a single-column CSV export.
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean)
     .map((l) => l.replace(/^[-*•\s]+/, "").trim());
 
-  // If the file is CSV-ish (commas present), take first cell from each non-header row.
   const looksCsv = lines.slice(0, 5).some((l) => l.includes(","));
   if (looksCsv) {
     const csvPrograms = [];
     for (const line of lines) {
       const firstCell = line.split(",")[0]?.replace(/^"|"$/g, "").trim();
       if (!firstCell) continue;
-      // Skip header-y rows
       if (normalizeName(firstCell) === "program" || normalizeName(firstCell) === "programs") continue;
       csvPrograms.push(firstCell);
     }
     return uniq(csvPrograms);
   }
 
-  // Plain line list
   return uniq(lines);
 }
 
 function parseLanguagesFromText(text = "") {
-  // Each line: code|Label  (ex: en|English)
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -218,15 +275,17 @@ function parseLanguagesFromText(text = "") {
       parsed.push({ code: parts[0], label: parts[1] });
     }
   }
-
-  console.log("These are the languages parsed" + parsed);
   return parsed.length ? parsed : DEFAULT_LANGUAGES;
 }
+
+//end pre-screening helpers
 
 async function getDriveClient() {
   if (!google) throw new Error("googleapis is not installed. Run: npm install googleapis");
   if (!DRIVE_FOLDER_ID) throw new Error("Missing DRIVE_FOLDER_ID env var");
   if (!GOOGLE_SERVICE_ACCOUNT_JSON) throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_JSON env var");
+  
+  console.log("auth credentials exist, continuing with verification . . .");
 
   let credentials;
   try {
@@ -234,7 +293,7 @@ async function getDriveClient() {
   } catch (e) {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON must be valid JSON (service account key file contents).");
   }
-
+ 
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/drive.readonly"],
@@ -253,21 +312,16 @@ async function listAllChildren(drive, folderId) {
       fields: "nextPageToken, files(id,name,mimeType,modifiedTime)",
       pageSize: 1000,
       pageToken,
-
-      // These two are essential for Shared Drives + “Shared with me”
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
     });
 
-    const batch = res.data.files || [];
-    files.push(...batch);
+    files.push(...(res.data.files || []));
     pageToken = res.data.nextPageToken || undefined;
   } while (pageToken);
 
-  console.log(`[KB] listAllChildren(${folderId}) -> ${files.length} files`);
   return files;
 }
-
 
 async function downloadText(drive, item) {
   const mime = item.mimeType || "";
@@ -282,7 +336,7 @@ async function downloadText(drive, item) {
       return typeof res.data === "string" ? res.data : "";
     }
 
-    // Google Sheet → export as CSV (first sheet)
+    // Google Sheet → export as CSV
     if (mime === "application/vnd.google-apps.spreadsheet") {
       const res = await drive.files.export(
         { fileId: item.id, mimeType: "text/csv", supportsAllDrives: true },
@@ -291,44 +345,41 @@ async function downloadText(drive, item) {
       return typeof res.data === "string" ? res.data : "";
     }
 
-    // Normal files (txt/md/csv/etc)
-    const res = await drive.files.get({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: `files(id,name,mimeType,modifiedTime),nextPageToken`,
-      pageSize: 1000,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-  });
+    // Other files: attempt direct download
+    const res = await drive.files.get(
+      { fileId: item.id, alt: "media", supportsAllDrives: true },
+      { responseType: "text" }
+    );
 
-    return typeof res.data === "string" ? res.data : JSON.stringify(res.data || "");
+    if (typeof res.data === "string") return res.data;
+    // If API returns something else, stringify safely
+    return JSON.stringify(res.data || "");
   } catch (err) {
     console.warn(`[KB] downloadText failed for "${item.name}" (${mime}):`, err?.message || err);
     return "";
   }
 }
 
+
+//idk what this function does
 function inferProgramTagFromPath(pathParts) {
-  // Recommended Drive folder layout:
-  //   <KB ROOT>/
-  //     FAQs/...
-  //     Programs/<Program Name>/...
   const idx = pathParts.findIndex((p) => normalizeName(p) === "programs");
   if (idx >= 0 && pathParts[idx + 1]) return pathParts[idx + 1];
   return null;
 }
 
 async function walkFolder(drive, folderId, pathParts = []) {
-  console.log("Walking this folder -> " + folderId);
   const children = await listAllChildren(drive, folderId);
-  console.log(`[KB] children count in ${folderId}: ${children.length}`);
-
+  
   const docs = [];
   let trainingProgramsText = null;
   let courseIndexText = null;
   let languagesText = null;
+  let paymentIndexText = null;
+
+  console.log("Beginning folder walk procedure . . .");
 
   for (const item of children) {
-    console.log(`[KB] Found: ${item.name} (${item.mimeType})`);
     if (item.mimeType === "application/vnd.google-apps.folder") {
       const sub = await walkFolder(drive, item.id, [...pathParts, item.name]);
       docs.push(...sub.docs);
@@ -336,63 +387,30 @@ async function walkFolder(drive, folderId, pathParts = []) {
       if (sub.trainingProgramsText) trainingProgramsText = trainingProgramsText || sub.trainingProgramsText;
       if (sub.courseIndexText) courseIndexText = courseIndexText || sub.courseIndexText;
       if (sub.languagesText) languagesText = languagesText || sub.languagesText;
+      if (sub.paymentIndexText) paymentIndexText = paymentIndexText || sub.paymentIndexText;
       continue;
     }
 
     const nameLower = normalizeName(item.name);
 
-    const isTrainingProgramsList =
-      nameLower === "training programs" ||
-      nameLower.includes("training programs");
-
-    const isCourseIndex =
-      nameLower === "chat agent - course index" ||
-      nameLower.includes("chat agent - course index");
-
-    const isLanguagesList =
-      nameLower === "languages.txt" ||
-      nameLower === "languages.md" ||
-      nameLower.includes("language list");
+    const isTrainingProgramsList = nameLower.includes("programs");
+    const isCourseIndex = nameLower.includes("chat agent - course index");
+    const isLanguagesList = nameLower === "languages.txt" || nameLower === "languages.md" || nameLower.includes("languages");
+    const isPaymentIndex = nameLower.includes("chat agent - payment index");
 
     const text = await downloadText(drive, item);
 
     if (isTrainingProgramsList) {
       trainingProgramsText = text;
-      docs.push({
-        id: item.id,
-        name: item.name,
-        path: [...pathParts, item.name].join("/"),
-        text,
-        programTag: null,
-        modifiedTime: item.modifiedTime,
-      });
-      continue;
     }
-
     if (isCourseIndex) {
       courseIndexText = text;
-      docs.push({
-        id: item.id,
-        name: item.name,
-        path: [...pathParts, item.name].join("/"),
-        text,
-        programTag: null,
-        modifiedTime: item.modifiedTime,
-      });
-      continue;
     }
-
     if (isLanguagesList) {
       languagesText = text;
-      docs.push({
-        id: item.id,
-        name: item.name,
-        path: [...pathParts, item.name].join("/"),
-        text,
-        programTag: null,
-        modifiedTime: item.modifiedTime,
-      });
-      continue;
+    }
+    if (isPaymentIndex) {
+      paymentIndexText = text;
     }
 
     if (!text || !text.trim()) continue;
@@ -408,9 +426,8 @@ async function walkFolder(drive, folderId, pathParts = []) {
     });
   }
 
-  return { docs, trainingProgramsText, courseIndexText, languagesText };
+  return { docs, trainingProgramsText, courseIndexText, languagesText, paymentIndexText };
 }
-
 
 async function loadKnowledgeBase({ force = false } = {}) {
   const now = Date.now();
@@ -422,29 +439,21 @@ async function loadKnowledgeBase({ force = false } = {}) {
   kbCache.loading = (async () => {
     try {
       if (!DRIVE_FOLDER_ID || !GOOGLE_SERVICE_ACCOUNT_JSON || !google) {
-        // Drive not configured (or googleapis missing). Keep defaults.
-        kbCache = {
-          ...kbCache,
-          loadedAt: now,
-          source: "default",
-          lastError: null,
-        };
+        kbCache = { ...kbCache, loadedAt: now, source: "default", lastError: null };
         return kbCache;
       }
 
       const drive = await getDriveClient();
-      console.log("Did I load a client successfully???" + drive);
-      
-      const { docs, trainingProgramsText, languagesText, courseIndexText } = await walkFolder(drive, DRIVE_FOLDER_ID, []);
-      const programs = trainingProgramsText
-        ? parseProgramsFromText(trainingProgramsText)
-        : kbCache.programs;
+      const { docs, trainingProgramsText, languagesText, courseIndexText, paymentIndexText } = await walkFolder(
+        drive,
+        DRIVE_FOLDER_ID,
+        []
+      );
 
-      const courses = courseIndexText
-        ? parseCourseIndexFromCSV(courseIndexText)
-        : kbCache.courses;
-      
+      const programs = trainingProgramsText ? parseProgramsFromText(trainingProgramsText) : kbCache.programs;
+      const courses = courseIndexText ? parseCourseIndexFromCSV(courseIndexText) : kbCache.courses;
       const languages = languagesText ? parseLanguagesFromText(languagesText) : kbCache.languages;
+      const paymentIndex = paymentIndexText ? parsePaymentIndexFromCSV(paymentIndexText) : kbCache.paymentIndex;
 
       kbCache = {
         loadedAt: now,
@@ -453,19 +462,15 @@ async function loadKnowledgeBase({ force = false } = {}) {
         programs,
         courses,
         languages,
+        paymentIndex,
         source: "google-drive",
         lastError: null,
       };
-
-      console.log(
-        `[KB] Loaded ${docs.length} docs, ${programs.length} programs. Source=${kbCache.source}`
-      );
 
       return kbCache;
     } catch (err) {
       console.error("[KB] Failed to load knowledge base:", err);
 
-      // Keep the last known cache if we have one; otherwise keep defaults
       kbCache = {
         ...kbCache,
         loadedAt: now,
@@ -487,24 +492,81 @@ async function loadKnowledgeBase({ force = false } = {}) {
 // Relevance extraction (simple)
 // -----------------------------
 const STOPWORDS = new Set([
-  "the","a","an","and","or","but","if","then","else","when","where","what","who","why","how",
-  "to","of","in","on","at","for","from","by","with","without","about","into","over","under",
-  "is","are","was","were","be","been","being","i","you","we","they","he","she","it","them","us",
-  "my","your","our","their","this","that","these","those","as","can","could","should","would",
-  "do","does","did","will","just","please"
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "if",
+  "then",
+  "else",
+  "when",
+  "where",
+  "what",
+  "who",
+  "why",
+  "how",
+  "to",
+  "of",
+  "in",
+  "on",
+  "at",
+  "for",
+  "from",
+  "by",
+  "with",
+  "without",
+  "about",
+  "into",
+  "over",
+  "under",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "i",
+  "you",
+  "we",
+  "they",
+  "he",
+  "she",
+  "it",
+  "them",
+  "us",
+  "my",
+  "your",
+  "our",
+  "their",
+  "this",
+  "that",
+  "these",
+  "those",
+  "as",
+  "can",
+  "could",
+  "should",
+  "would",
+  "do",
+  "does",
+  "did",
+  "will",
+  "just",
+  "please",
 ]);
 
 function extractKeywords(text = "") {
-  const words = (text.toLowerCase().match(/[a-z0-9]+/g) || [])
+  const words = (text.toLowerCase().match(/[a-z0-9_]+/g) || [])
     .filter((w) => w.length >= 3)
     .filter((w) => !STOPWORDS.has(w));
 
-  // limit for speed
   return uniq(words).slice(0, 20);
 }
 
 function chunkText(text = "") {
-  // Split by blank lines; fallback to sentence-ish split if needed
   const paras = text
     .split(/\n\s*\n/g)
     .map((p) => p.trim())
@@ -526,42 +588,59 @@ function scoreChunk(chunkLower, keywords) {
   return score;
 }
 
-function buildKnowledgeContext({ kb, message, programsSelected }) {
-  const selected = (programsSelected || []).map((p) => String(p).trim()).filter(Boolean);
-  const selectedNorm = selected.map(normalizeName);
-
-  // Candidate docs:
-  // - Always include anything in FAQs folder or with faq-ish name
-  // - Include any program-tagged docs matching selection
-  // - If no selection, include general docs only (avoid dumping every program)
+/**
+ * Build KB context.
+ * - Always includes docs that match course codes in title/path (course-code centric retrieval)
+ * - Also includes general docs + relevant chunks based on user message
+ */
+function buildKnowledgeContext({ kb, message, certificateGoals, courseCodes }) {
   const docs = kb.docs || [];
-
-  const generalDocs = docs.filter((d) => {
-    const p = normalizeName(d.path || d.name);
-    const isFaq = p.includes("faq") || p.includes("faqs") || p.includes("general");
-    const isProgramsList = normalizeName(d.name) === "Training Programs" || p.includes("Training Programs") || p.includes("Chat Agent - Course Index") ;
-    return isFaq || isProgramsList || !d.programTag;
-  });
-
-  let programDocs = [];
-  if (selectedNorm.length) {
-    programDocs = docs.filter((d) => {
-      const tag = normalizeName(d.programTag || "");
-      const name = normalizeName(d.name || "");
-      const path = normalizeName(d.path || "");
-      // Match by folder tag first; otherwise fallback to name/path contains the program label
-      return selectedNorm.some((sp) => (tag && sp === tag) || name.includes(sp) || path.includes(sp));
-    });
-  }
-
-  const candidateDocs = uniq([...generalDocs, ...programDocs]);
-
-  // If no message or very short, include just a small fixed excerpt
-  const keywords = extractKeywords(message || "");
+  const msg = String(message || "");
+  const keywords = extractKeywords(msg);
   const wantRelevant = keywords.length >= 2;
 
+  const codes = (courseCodes || []).map((c) => String(c).toLowerCase());
+  const goals = (certificateGoals || []).map((g) => String(g).toLowerCase());
+
+  // General docs: FAQs, general, core, policies
+  const generalDocs = docs.filter((d) => {
+    const p = normalizeName(d.path || d.name);
+    return (
+      p.includes("Agreement") ||
+      p.includes("Catalog") ||
+      p.includes("Refund") ||
+      p.includes("Enrollment") ||
+      p.includes("About") ||
+      p.includes("Basic") ||
+      p.includes("info") ||
+      p.includes("us") ||
+      p.includes("Course") ||
+      p.includes("policy") ||
+      !d.programTag
+    );
+  });
+
+  // Course-code docs: doc name/path contains NAT_101 etc.
+  const courseDocs = codes.length
+    ? docs.filter((d) => {
+        const t = normalizeName(`${d.name} ${d.path}`);
+        return codes.some((cc) => t.includes(cc));
+      })
+    : [];
+
+  // If user is mid-chat with a goal but no codes (rare), include docs where goal appears.
+  const goalDocs =
+    !courseDocs.length && goals.length
+      ? docs.filter((d) => {
+          const t = normalizeName(`${d.name} ${d.path} ${d.text?.slice(0, 5000) || ""}`);
+          return goals.some((g) => t.includes(g));
+        })
+      : [];
+
+  const candidateDocs = uniq([...courseDocs, ...generalDocs, ...goalDocs]);
+
   const excerpts = [];
-  const maxChunksTotal = 12;
+  const maxChunksTotal = 14;
   const maxChunksPerDoc = 3;
 
   for (const doc of candidateDocs) {
@@ -571,12 +650,7 @@ function buildKnowledgeContext({ kb, message, programsSelected }) {
     if (!chunks.length) continue;
 
     if (!wantRelevant) {
-      // Take first chunk only to keep context short
-      excerpts.push({
-        doc,
-        chunk: chunks[0],
-        score: 0,
-      });
+      excerpts.push({ doc, chunk: chunks[0], score: 0 });
       continue;
     }
 
@@ -594,7 +668,6 @@ function buildKnowledgeContext({ kb, message, programsSelected }) {
 
   if (!excerpts.length) return "No knowledge base content available.";
 
-  // Group by doc for readability
   const grouped = new Map();
   for (const ex of excerpts) {
     const key = ex.doc.path || ex.doc.name;
@@ -606,7 +679,6 @@ function buildKnowledgeContext({ kb, message, programsSelected }) {
   for (const [docPath, chunks] of grouped.entries()) {
     out += `\n### ${docPath}\n`;
     for (const c of chunks) {
-      // Keep each chunk reasonably short
       const trimmed = c.length > 900 ? c.slice(0, 900) + "…" : c;
       out += `- ${trimmed.replace(/\n+/g, " ").trim()}\n`;
     }
@@ -616,16 +688,126 @@ function buildKnowledgeContext({ kb, message, programsSelected }) {
 }
 
 // -----------------------------
+// Payments
+// -----------------------------
+
+function findPaymentRow(paymentIndex, courseCode) {
+  const cc = String(courseCode || "").trim();
+  return (paymentIndex || []).find((r) => String(r.course_code).trim() === cc) || null;
+}
+
+function formatMoney(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  return `$${Math.round(v).toLocaleString("en-US")}`;
+}
+
+function computePaymentPlan({ tuitionPrice, planLengthWeeks, frequency }) {
+  const downPayment = Math.round((tuitionPrice * DEFAULT_DOWN_PAYMENT_PERCENT) / 100);
+  const remaining = Math.max(0, tuitionPrice - downPayment);
+
+  // weekly -> N payments, biweekly -> approx N/2 payments (ceil)
+  const installments =
+    frequency === "biweekly" ? Math.max(1, Math.ceil(planLengthWeeks / 2)) : Math.max(1, planLengthWeeks);
+
+  const installmentAmount = Math.ceil(remaining / installments);
+
+  return {
+    downPayment,
+    installments,
+    installmentAmount,
+    remaining,
+  };
+}
+
+function buildPaymentBlock(paymentRow, courseMeta) {
+  if (!paymentRow) {
+    return `Payment info: Please ask staff for the current tuition and payment options for this course.`;
+  }
+
+  const tuition = paymentRow.tuitionPrice;
+  const discountApplicable = !!paymentRow.discountApplicable || !!courseMeta?.pif_discount_available;
+  const paymentPlanApplicable = !!paymentRow.paymentPlanApplicable;
+
+  // Pay-in-full option
+  const discountText = discountApplicable
+    ? `Pay-in-full discount: ${formatMoney(PAY_IN_FULL_DISCOUNT_AMOUNT)} off tuition.`
+    : `Pay-in-full: available.`;
+
+  // Payment plan option (MAP excluded by sheet boolean)
+  let planText = "Payment plan: not available for this course.";
+  if (paymentPlanApplicable) {
+    const plan = computePaymentPlan({
+      tuitionPrice: tuition,
+      planLengthWeeks: paymentRow.planLengthWeeks || 10,
+      frequency: paymentRow.frequency || "weekly",
+    });
+
+    planText =
+      `Payment plan: ${DEFAULT_DOWN_PAYMENT_PERCENT}% down (${formatMoney(plan.downPayment)}), then ` +
+      `${plan.installments} ${paymentRow.frequency} payments of about ${formatMoney(plan.installmentAmount)}.`;
+  }
+
+  return [
+    `Tuition: ${formatMoney(tuition)}`,
+    discountText,
+    planText,
+    `Note: If cost is a barrier, we can use the payment plan (when available) so you can enroll sooner.`,
+  ].join("\n");
+}
+
+// -----------------------------
+// Prescreen validation
+// -----------------------------
+
+
+function validatePrescreen(prescreen) {
+  if (!prescreen) return { ok: false, reason: "Missing prescreen." };
+  const lead = prescreen.lead || {};
+  const consent = prescreen.marketingConsent || {};
+  const availabilityType = prescreen.availabilityType;
+
+  if (!lead.fullName || !lead.phone || !lead.email) return { ok: false, reason: "Missing name/phone/email." };
+
+  if (!availabilityType || !["daysOff", "noSetSchedule", "notWorking"].includes(availabilityType)) {
+    return { ok: false, reason: "Missing availability selection." };
+  }
+
+  if (availabilityType === "daysOff") {
+    const days = prescreen.daysOff;
+    if (!Array.isArray(days) || !days.length) return { ok: false, reason: "Missing available days off." };
+  }
+
+  // consent: opt-in is optional, but metadata should exist (widget collects)
+  if (!("optIn" in consent)) return { ok: false, reason: "Missing marketing consent field." };
+
+  return { ok: true };
+}
+
+function buildScheduleBlock(scheduleOptions = []) {
+  if (!scheduleOptions.length) {
+    return `Schedule options: We’ll help you pick the best in-person session after you enroll.`;
+  }
+
+  const lines = scheduleOptions.map((o, i) => {
+    const label = o.label ? `${o.label}: ` : "";
+    const when = `${o.dayOfWeek || ""} ${o.startDate || ""} ${o.startTime || ""}-${o.endTime || ""}`.trim();
+    const loc = o.location ? ` (${o.location})` : "";
+    return `${i + 1}) ${label}${when}${loc}`;
+  });
+
+  return `Schedule options (best 2 matches):\n${lines.join("\n")}`;
+}
+
+// -----------------------------
 // Routes
 // -----------------------------
 
-// Health check
 app.get("/health", async (req, res) => {
   const kb = await loadKnowledgeBase();
   res.json({ status: "ok", kbSource: kb.source, kbLoadedAt: kb.loadedAt, kbError: kb.lastError });
 });
 
-// Config for the widget (program list, language list)
 app.get("/config", async (req, res) => {
   const kb = await loadKnowledgeBase();
   res.json({
@@ -635,7 +817,6 @@ app.get("/config", async (req, res) => {
   });
 });
 
-// Optional: simple status endpoint for debugging
 app.get("/kb-status", async (req, res) => {
   const kb = await loadKnowledgeBase();
   res.json({
@@ -643,94 +824,213 @@ app.get("/kb-status", async (req, res) => {
     loadedAt: kb.loadedAt,
     docsCount: kb.docs.length,
     programsCount: kb.programs.length,
+    paymentIndexCount: (kb.paymentIndex || []).length,
     lastError: kb.lastError,
     sampleDocs: kb.docs.slice(0, 5).map((d) => ({ name: d.name, path: d.path, programTag: d.programTag })),
   });
 });
 
-// AI Chat Route
+// AI Chat Route (new payload shape supported; backward compatible)
 app.post("/chat", async (req, res) => {
-  console.log("Received /chat request with body:", req.body);
-
   try {
-    const { message, language = "en", programsSelected = [] } = req.body;
+    const body = req.body || {};
+    const message = body.message;
+    const language = body.prescreen?.language || body.language || "en";
 
-    if (!message) {
-      return res.status(400).json({ error: "Missing 'message' in request body" });
+    if (!message) return res.status(400).json({ error: "Missing 'message' in request body" });
+
+    const prescreen = body.prescreen || null;
+    const session = body.session || { sessionId: null, prescreenCompleted: false };
+
+    // Backward compatibility: if old client sends programsSelected
+    const oldProgramsSelected = Array.isArray(body.programsSelected) ? body.programsSelected : [];
+    const certificateGoals = prescreen?.certificateGoals || oldProgramsSelected;
+
+    // Require prescreen completion for live CRM sync and “specialist” behavior
+    if (!session?.prescreenCompleted || !prescreen) {
+      return res.json({
+        reply:
+          language === "es"
+            ? "Por favor completa el formulario de pre-selección para que pueda recomendarte el mejor programa, horarios y opciones de pago."
+            : "Please complete the pre-screening form so I can recommend the best program, schedule options, and payment plan.",
+      });
+    }
+
+    const pv = validatePrescreen(prescreen);
+    if (!pv.ok) {
+      return res.json({
+        reply:
+          language === "es"
+            ? "Parece que falta información en el formulario. Por favor revisa tu nombre, teléfono, correo y disponibilidad, y vuelve a intentarlo."
+            : "It looks like some pre-screen info is missing. Please give me your name, phone, email, so we can try again.",
+      });
     }
 
     const kb = await loadKnowledgeBase();
 
+    // Normalize goals (CNA/NAT handling)
+    const normalizedGoals = normalizeGoals(certificateGoals);
+
+    // Recommend courses using updated course index structure
+    const courseRows = (kb.courses || []).map((c) => ({
+      course_code: c.course_code,
+      course_name: c.course_name,
+      certificates_included: c.certificates_included || c.certificates || [],
+      priority: c.priority ?? 999,
+      link: c.link || "",
+      pif_discount_available: !!c.pif_discount_available,
+    }));
+
+    const rec = recommendCourses(courseRows, normalizedGoals);
+
+    // CMA handoff
+    if (rec.requiresStaffHandoff) {
+      const handoffText =
+        language === "es"
+          ? "Gracias — el programa de Asistente Médico Clínico es un poco más complejo. Un asesor del curso te ayudará personalmente. ¿Prefieres llamada o mensaje de texto?"
+          : "Thanks — Clinical Medical Assistant is a bit more complex. A course advisor will help you personally. Do you prefer a phone call or text message?";
+
+      // Optional Wix sync (only after prescreen)
+      if (ENABLE_WIX_SYNC && wix?.syncConversation) {
+        try {
+          await wix.syncConversation({
+            sessionId: session.sessionId,
+            lead: prescreen.lead,
+            prescreen,
+            messages: [
+              { role: "user", text: String(message) },
+              { role: "bot", text: handoffText },
+            ],
+          });
+        } catch (e) {
+          // non-fatal
+          console.warn("[WIX] sync failed (handoff):", e?.message || e);
+        }
+      }
+
+      return res.json({ reply: handoffText });
+    }
+
+    // Pick top recommendation (single course gameplan)
+    const primary = (rec.recommended || [])[0] || null;
+
+    const courseCodes = primary?.course_code ? [primary.course_code] : [];
+    const courseMeta = primary || null;
+
+    // Pull payment info (course-code keyed)
+    const paymentRow = primary ? findPaymentRow(kb.paymentIndex, primary.course_code) : null;
+
+    // Fetch schedule options from Wix (view-only), then select best 2
+    let scheduleOptions = [];
+    if (ENABLE_WIX_SCHEDULES && wix?.fetchScheduleOptions && primary?.course_code) {
+      try {
+        const resp = await wix.fetchScheduleOptions({
+          courseCode: primary.course_code,
+          availabilityType: prescreen.availabilityType,
+          daysOff: prescreen.daysOff || [],
+        });
+
+        const options = Array.isArray(resp?.options) ? resp.options : [];
+        scheduleOptions = selectBestTwo(options, {
+          availabilityType: prescreen.availabilityType,
+          daysOff: prescreen.daysOff || [],
+        });
+      } catch (e) {
+        console.warn("[WIX] schedule fetch failed:", e?.message || e);
+        scheduleOptions = [];
+      }
+    }
+
+    // Build blocks for the system prompt
+    const recommendationBlock = primary
+      ? `Recommended course: ${primary.course_name} (${primary.course_code})`
+      : `Recommended course: (not found in index)`;
+
+    const scheduleBlock = buildScheduleBlock(scheduleOptions);
+
+    // Payment block: enforce MAP no plan via sheet paymentPlanApplicable=false
+    const paymentBlock = primary
+      ? buildPaymentBlock(paymentRow, courseMeta)
+      : "Payment info: Please ask staff for current tuition and payment options.";
+
     const knowledgeContext = buildKnowledgeContext({
       kb,
       message,
-      programsSelected,
+      certificateGoals: normalizedGoals,
+      courseCodes,
     });
 
-    const recommended = recommendCourses(programsSelected, kb.courses, 3)
-
-    const recommendationBlock = recommended.length
-      ? recommended.map(c =>
-          `- ${c.course_name} (${c.course_code}) — Includes: ${c.certificates.join(", ")}${c.link ? ` — Link: ${c.link}` : ""} — Priority: ${c.priority}`
-      ).join("\n")
-      : "- no course matches found in the Course Index for the selected certificates.";
-
+    // Specialist-style system prompt
     const systemPrompt = `
-You are an enrollment assistant for "Healthcare-Edu" a healthcare training school licensed to train in Massachusetts.
+You are a course-specialist style enrollment assistant for "Healthcare-Edu", an Occupational healthcare training school licensed to train students in Massachusetts.
 
-Your goals:
-- Be friendly, helpful, and concise.
-- Always respond in the user's preferred language (language code): ${language}.
-- Answer any questions the students may have about our training programs. 
-- Encourage the student to enroll or speak with staff for next steps.
-- The School's physical address is 793 Crescent Street, Brockton MA, 02302.
-- If you are not sure, direct the student to visit the school during our standard business hours (Monday - Friday, 10am to 5pm). Do NOT invent details.
+IMPORTANT compliance language:
+- Do NOT say the school "certifies" students.
+- Say we provide training that prepares students to sit for the state certification exam where applicable.
 
-Programs the student selected: ${Array.isArray(programsSelected) ? programsSelected.join(", ") : ""}
+Conversation objective:
+1) Confirm the recommended course.
+2) Provide a clear gameplan for successful completion (online work, in-person labs/clinical if applicable).
+3) Present payment options. Prefer paying in full by mentioning the discount, but if cost is a barrier, offer the payment plan if available.
+4) End by asking if they are ready to enroll or have questions.
+`
+//next round of implementation, I will make payment index give a link the agent can give to the student for them to enroll. 
+`
+5) When a student says they are ready to enroll, direct them to the correct
 
-Recommended course(s) based on selected certificates:
+Always respond in the user's preferred language (language code): ${language}.
+
+Pre-screen summary:
+- Name: ${prescreen.lead?.fullName}
+- Availability: ${prescreen.availabilityType}${prescreen.availabilityType === "daysOff" ? ` (days: ${(prescreen.daysOff || []).join(", ")})` : ""}
+- Goals: ${(normalizedGoals || []).join(", ")}
+
 ${recommendationBlock}
 
+${scheduleBlock}
+
+Payment options (deterministic — do not change numbers):
+${paymentBlock}
+
 Rules:
-- Treat the recommended course list as the primary enrollment suggestion.
-- If the user asks about something not covered, explain what is missing and propose the next best path.
+- Be friendly, confident, and concise.
+- If asked something not in the KB, direct them to contact our staff via email or visit during business hours.
+- School address: 793 Crescent Street, Brockton MA, 02302.
+- Business hours: Monday–Friday, 10am–5pm.
+- Do not invent dates/times; use provided schedule options only.
 
-Use the following Knowledge Base content to answer. If the KB does not contain an answer, direct them to visit the school during our schools business hours (Monday - Friday, 10am - 5pm).
-
-KNOWLEDGE BASE:
+KNOWLEDGE BASE EXCERPTS:
 ${knowledgeContext}
 `.trim();
 
     const response = await client.responses.create({
-      model: "gpt-4.1-mini", // or any model you choose
+      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
       input: [
         { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: [{ type: "input_text", text: message }],
-        },
+        { role: "user", content: [{ type: "input_text", text: String(message) }] },
       ],
     });
 
-    console.log("OpenAI raw response:", JSON.stringify(response, null, 2));
+    const replyText = response.output_text || "Sorry, I couldn't generate a response.";
 
-    let replyText = "";
-
-    if (response.output_text) {
-      replyText = response.output_text;
-    } else if (
-      response.output &&
-      response.output[0] &&
-      response.output[0].content &&
-      response.output[0].content[0] &&
-      response.output[0].content[0].text
-    ) {
-      replyText = response.output[0].content[0].text;
-    } else {
-      replyText = "Sorry, I couldn't generate a response.";
+    // Live sync to Wix Inbox AFTER prescreen complete
+    if (ENABLE_WIX_SYNC && wix?.syncConversation) {
+      try {
+        await wix.syncConversation({
+          sessionId: session.sessionId,
+          lead: prescreen.lead,
+          prescreen,
+          messages: [
+            { role: "user", text: String(message) },
+            { role: "bot", text: replyText },
+          ],
+        });
+      } catch (e) {
+        console.warn("[WIX] sync failed:", e?.message || e);
+      }
     }
 
-    res.json({ reply: replyText });
+    return res.json({ reply: replyText });
   } catch (err) {
     console.error("Error in /chat:", err);
     res.status(500).json({ error: "AI error", details: err.message });
