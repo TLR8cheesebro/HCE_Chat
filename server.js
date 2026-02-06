@@ -1032,6 +1032,9 @@ ${knowledgeContext}
     console.error("Error in /chat:", err);
     res.status(500).json({ error: "AI error", details: err.message });
   }
+  
+  console.log("View of prompt constructed;" + systemPrompt);
+
 });
 
 // Start server
