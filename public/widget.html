@@ -1,40 +1,128 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chat Widget</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Healthcare-Edu Chat</title>
   <link rel="stylesheet" href="widget.css" />
 </head>
 <body>
   <div id="chat-widget">
-    <div id="chat-header">Healthcare-Edu AI Course Specialist</div>
-
-    <!-- Pre-chat screening -->
-    <div id="prechat" role="dialog" aria-modal="true" aria-label="Pre-chat questions">
-      <div class="prechat-card">
-        <h2 class="prechat-title">Before we start, please answer these questions.</h2>
-
-        <div class="prechat-section">
-          <div class="prechat-label">Which language do you prefer to speak?</div>
-          <div id="language-options" class="option-grid" aria-label="Language options"></div>
+    <!-- Pre-screen overlay -->
+    <div id="prescreen-overlay" class="overlay">
+      <div class="overlay-card">
+        <div class="overlay-header">
+          <div class="title">Quick Pre-Screen</div>
+          <div class="subtitle">Answer a few questions so I can recommend the right program, schedule, and payment options.</div>
         </div>
 
-        <div class="prechat-section">
-          <div class="prechat-label">Which training program are you interested in?</div>
-          <div class="prechat-subtext">Select all that apply.</div>
-          <div id="program-options" class="option-grid" aria-label="Program options"></div>
+        <div class="stepper">
+          <div class="step-dot active" data-step="1"></div>
+          <div class="step-dot" data-step="2"></div>
+          <div class="step-dot" data-step="3"></div>
         </div>
 
-        <button id="start-chat" class="primary-btn" disabled>Start chat</button>
+        <!-- Step 1 -->
+        <div class="step" id="step-1">
+          <h3>Step 1 — Language & Goals</h3>
+
+          <label class="label">Preferred language</label>
+          <select id="languageSelect" class="select"></select>
+
+          <label class="label" style="margin-top:14px;">What are you interested in? (Select all that apply)</label>
+          <div id="goalsList" class="checkbox-grid"></div>
+
+          <div id="step1Error" class="error"></div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step hidden" id="step-2">
+          <h3>Step 2 — Availability</h3>
+
+          <div class="radio-list">
+            <label class="radio">
+              <input type="radio" name="availabilityType" value="daysOff" checked />
+              <span>I have specific day(s) off work</span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="availabilityType" value="noSetSchedule" />
+              <span>I do not have a set schedule</span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="availabilityType" value="notWorking" />
+              <span>I am not working currently</span>
+            </label>
+          </div>
+
+          <div id="daysOffWrap">
+            <label class="label" style="margin-top:12px;">Which days are you available for in-person sessions?</label>
+            <div class="checkbox-grid">
+              <label class="check"><input type="checkbox" value="Mon" class="dayOff" /> Mon</label>
+              <label class="check"><input type="checkbox" value="Tue" class="dayOff" /> Tue</label>
+              <label class="check"><input type="checkbox" value="Wed" class="dayOff" /> Wed</label>
+              <label class="check"><input type="checkbox" value="Thu" class="dayOff" /> Thu</label>
+              <label class="check"><input type="checkbox" value="Fri" class="dayOff" /> Fri</label>
+              <label class="check"><input type="checkbox" value="Sat" class="dayOff" /> Sat</label>
+              <label class="check"><input type="checkbox" value="Sun" class="dayOff" /> Sun</label>
+            </div>
+          </div>
+
+          <div id="step2Error" class="error"></div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step hidden" id="step-3">
+          <h3>Step 3 — Contact</h3>
+
+          <div class="grid-2">
+            <div>
+              <label class="label">Full name</label>
+              <input id="fullName" class="input" placeholder="Jane Doe" />
+            </div>
+            <div>
+              <label class="label">Phone</label>
+              <input id="phone" class="input" placeholder="(555) 555-5555" />
+            </div>
+          </div>
+
+          <label class="label" style="margin-top:12px;">Email</label>
+          <input id="email" class="input" placeholder="jane@email.com" />
+
+          <div class="consent">
+            <label class="check">
+              <input id="marketingOptIn" type="checkbox" />
+              <span id="marketingLabelText">
+                I agree to receive marketing messages from Healthcare-Edu by SMS and email.
+              </span>
+            </label>
+            <div class="consent-note">
+              Optional. You can opt out anytime.
+            </div>
+          </div>
+
+          <div id="step3Error" class="error"></div>
+        </div>
+
+        <div class="overlay-actions">
+          <button id="backBtn" class="btn secondary hidden">Back</button>
+          <button id="nextBtn" class="btn primary">Next</button>
+        </div>
       </div>
     </div>
 
-    <div id="chat-messages" aria-live="polite"></div>
+    <!-- Chat UI -->
+    <div class="chat-shell">
+      <div class="chat-header">
+        <div class="brand">Healthcare-Edu</div>
+        <div class="small">AI course assistant</div>
+      </div>
 
-    <div id="chat-input-area">
-      <input id="chat-input" type="text" placeholder="Ask me anything about our courses..." disabled />
-      <button id="chat-send" disabled>➤</button>
+      <div id="chat-log" class="chat-log"></div>
+
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" class="chat-input" placeholder="Type your message..." autocomplete="off" />
+        <button id="sendBtn" class="btn primary" type="submit">Send</button>
+      </form>
     </div>
   </div>
 
