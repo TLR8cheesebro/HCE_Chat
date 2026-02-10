@@ -1,9 +1,9 @@
 :root {
   --bg: #FFFDF9;
   --card: #dbdbdb;
-  --muted: rgba(255,255,255,0.70);
-  --muted2: rgba(255,255,255,0.55);
-  --line: rgba(255,255,255,0.12);
+  --muted: rgba(244,175,0,0.77);
+  --muted2: rgba(0,242,255,1);
+  --line: rgba(0,0,0,0.8);
   --accent: #ffb118;
   --danger: #ff6b6b;
   --radius: 14px;
@@ -24,7 +24,7 @@ body {
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg);
-  color: #fff;
+  color: #494949;
   box-shadow: var(--shadow);
   position: relative;
 }
@@ -33,7 +33,7 @@ body {
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.70);
+  background: rgba(0,13,255,0.8);
   display: flex;
   align-items: center;
   justify-content: center;
