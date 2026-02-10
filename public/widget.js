@@ -2,11 +2,13 @@
 // 3-step prescreen overlay + required lead capture
 // Sends new payload shape to /chat:
 // { message, session:{sessionId,prescreenCompleted}, prescreen:{...} }
+// Send a recommendation after 3 seconds
 
 const STORAGE_KEYS = {
   sessionId: "hedu_session_id",
   prescreen: "hedu_prescreen",
   prescreenCompleted: "hedu_prescreen_completed",
+  autoSent: "hedu_auto_reco_sent"
 };
 
 function getOrCreateSessionId() {
@@ -16,6 +18,14 @@ function getOrCreateSessionId() {
     sessionStorage.setItem(STORAGE_KEYS.sessionId, id);
   }
   return id;
+}
+
+function hasSentAutoReco() {
+  return sessionStorage.getItem(STORAGE_KEYS.autoSent) === "true";
+}
+
+function setSentAutoReco() {
+  sessionStorage.setItem(STORAGE_KEYS.autoSent, "true");
 }
 
 function setPrescreenCompleted(v) {
@@ -352,25 +362,41 @@ async function initPrescreen() {
     savePrescreen(prescreen);
     setPrescreenCompleted(true);
 
-    // Start chat
+    //start chat
     hide(overlay);
 
-    // Optional: greet
-    addMessage("bot", prescreen.language === "es"
-      ? "¡Gracias! Tengo tu información. Espera mientras genero tu recomendación."
+  // Immediate “please wait” greeting 
+  addMessage(
+    "bot",
+    prescreen.language === "es"
+      ? "¡Gracias! Ya tengo tu información. Por favor espera mientras genero tu recomendación…"
       : "Thanks! I have your info. Please wait while I generate your recommendation . . ."
-    );
-  });
-}
+  );
 
-(async function main() {
-  getOrCreateSessionId();
-  await initPrescreen();
-  initChatForm();
+  // After 3 seconds, auto-request the recommendation + schedule from the server
+  if (!hasSentAutoReco()) {
+    setSentAutoReco();
+    setTimeout(async () => {
+    try {
+      // This message is just a trigger for the server prompt to produce the plan.
+      // We intentionally do NOT display it as a user bubble.
+      const trigger =
+        prescreen.language === "es"
+          ? "Genera mi recomendación del curso y las 2 mejores opciones de horario si están disponibles. Luego pregúntame si estoy listo(a) para inscribirme o si tengo preguntas."
+          : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
 
-  // Friendly initial hint if prescreen not completed
-  if (!isPrescreenCompleted()) {
-    // overlay shows; no need to add message
-    return;
+      const reply = await sendToChat(trigger);
+      addMessage("bot", reply);
+    } catch (err) {
+      console.error(err);
+      addMessage(
+        "bot",
+        prescreen.language === "es"
+          ? "Lo siento—tuve un problema generando tu recomendación. Por favor escribe cualquier pregunta y te ayudo."
+          : "Sorry — I had trouble generating your recommendation. Please type any question and I’ll help."
+      );
+    }
+  }, 3000);
   }
-})();
+});
+}
