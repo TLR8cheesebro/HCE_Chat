@@ -398,4 +398,4 @@ async function initPrescreen() {
     }, 3000);
   }
 });
-
+} //is this enough curly brackets :'(
