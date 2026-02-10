@@ -89,7 +89,7 @@ body {
 .label {
   display: block;
   font-size: 12px;
-  color: var(--muted);
+  color: rgb(0,0,0);
   margin-bottom: 6px;
 }
 
