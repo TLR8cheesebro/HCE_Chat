@@ -376,27 +376,26 @@ async function initPrescreen() {
   // After 3 seconds, auto-request the recommendation + schedule from the server
   if (!hasSentAutoReco()) {
     setSentAutoReco();
-    setTimeout(async () => {
-    try {
-      // This message is just a trigger for the server prompt to produce the plan.
-      // We intentionally do NOT display it as a user bubble.
-      const trigger =
-        prescreen.language === "es"
-          ? "Genera mi recomendación del curso y las 2 mejores opciones de horario si están disponibles. Luego pregúntame si estoy listo(a) para inscribirme o si tengo preguntas."
-          : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
 
-      const reply = await sendToChat(trigger);
-      addMessage("bot", reply);
-    } catch (err) {
-      console.error(err);
-      addMessage(
-        "bot",
-        prescreen.language === "es"
-          ? "Lo siento—tuve un problema generando tu recomendación. Por favor escribe cualquier pregunta y te ayudo."
-          : "Sorry — I had trouble generating your recommendation. Please type any question and I’ll help."
-      );
-    }
-  }, 3000);
+    setTimeout(async () => {
+      try {
+        const trigger =
+          prescreen.language === "es"
+            ? "Genera mi recomendación del curso y las 2 mejores opciones de horario si están disponibles. Luego pregúntame si estoy listo(a) para inscribirme o si tengo preguntas."
+            : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
+
+        const reply = await sendToChat(trigger);
+        addMessage("bot", reply);
+      } catch (err) {
+        console.error(err);
+        addMessage(
+          "bot",
+          prescreen.language === "es"
+            ? "Lo siento—tuve un problema generando tu recomendación. Por favor escribe cualquier pregunta y te ayudo."
+            : "Sorry — I had trouble generating your recommendation. Please type any question and I’ll help."
+        );
+      }
+    }, 3000);
   }
 });
-}
+
