@@ -57,7 +57,7 @@ body {
 .overlay-header .subtitle {
   margin-top: 6px;
   font-size: 13px;
-  color: var(--muted);
+  color: rgb(0,0,0);
   line-height: 1.35;
 }
 
@@ -70,8 +70,8 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.22);
+  background: rgb(255,255,255);
+  border: 1px solid var(--line);
 }
 .step-dot.active {
   background: var(--accent);
@@ -209,6 +209,7 @@ body {
 .chat-header .brand {
   font-weight: 800;
   letter-spacing: 0.2px;
+  color: rgb(0,0,0);
 }
 .chat-header .small {
   font-size: 12px;
@@ -249,14 +250,14 @@ body {
   gap: 10px;
   padding: 12px 12px;
   border-top: 1px solid var(--line);
-  background: var(--muted2);
+  background: rgb(255, 255, 255);
 }
 
 .chat-input {
   flex: 1;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,0.06);
+  background: rgb(255, 255, 255);
   color: #000000;
   padding: 10px 10px;
   outline: none;
