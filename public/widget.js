@@ -357,8 +357,8 @@ async function initPrescreen() {
 
     // Optional: greet
     addMessage("bot", prescreen.language === "es"
-      ? "¡Gracias! Ya tengo tu información. ¿Qué te gustaría saber primero?"
-      : "Thanks! I have your info. What would you like to know first?"
+      ? "¡Gracias! Tengo tu información. Espera mientras genero tu recomendación."
+      : "Thanks! I have your info. Please wait while I generate your recommendation . . ."
     );
   });
 }
