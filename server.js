@@ -887,7 +887,9 @@ app.post("/chat", async (req, res) => {
     const message = body.message;
     const language = body.prescreen?.language || body.language || "en";
 
-    if (!message) return res.status(400).json({ error: "Missing 'message' in request body" });
+    if (!message) {
+      return res.status(400).json({ error: "Missing 'message' in request body" });
+    }
 
     const prescreen = body.prescreen || null;
     const session = body.session || { sessionId: null, prescreenCompleted: false };
@@ -919,7 +921,12 @@ app.post("/chat", async (req, res) => {
     const isInternal = !!body?.meta?.internal;
 
     // Backup: trigger automation if it hasn't run yet
-    if (ENABLE_WIX_SYNC && wix?.triggerPrescreenAutomation && session?.sessionId && !hasRecentPrescreenSent(session.sessionId)) {
+    if (
+      ENABLE_WIX_SYNC &&
+      wix?.triggerPrescreenAutomation &&
+      session?.sessionId &&
+      !hasRecentPrescreenSent(session.sessionId)
+    ) {
       try {
         await wix.triggerPrescreenAutomation({
           sessionId: session.sessionId,
@@ -932,7 +939,6 @@ app.post("/chat", async (req, res) => {
         console.warn("[WIX] prescreen automation failed:", e?.message || e);
       }
     }
-
 
     const kb = await loadKnowledgeBase();
 
@@ -951,13 +957,15 @@ app.post("/chat", async (req, res) => {
 
     const rec = recommendCourses(courseRows, normalizedGoals);
 
-    // CMA handoff
+    // CMA handoff (return immediately)
     if (rec.requiresStaffHandoff) {
       const handoffText =
         language === "es"
           ? "Gracias — el programa de Asistente Médico Clínico es un poco más complejo. Un asesor del curso te ayudará personalmente. ¿Prefieres llamada o mensaje de texto?"
           : "Thanks — Clinical Medical Assistant is a bit more complex. A course advisor will help you personally. Do you prefer a phone call or text message?";
 
+      return res.json({ reply: handoffText });
+    }
 
     // Pick top recommendation (single course gameplan)
     const primary = (rec.recommended || [])[0] || null;
@@ -1027,7 +1035,11 @@ Always respond in the user's preferred language (language code): ${language}.
 
 Pre-screen summary:
 - Name: ${prescreen.lead?.fullName}
-- Availability (The best days for the student to go to class): ${prescreen.availabilityType}${prescreen.availabilityType === "daysOff" ? ` (days: ${(prescreen.daysOff || []).join(", ")})` : ""}
+- Availability (The best days for the student to go to class): ${prescreen.availabilityType}${
+      prescreen.availabilityType === "daysOff"
+        ? ` (days: ${(prescreen.daysOff || []).join(", ")})`
+        : ""
+    }
 - Goals: ${(normalizedGoals || []).join(", ")}
 
 ${recommendationBlock}
@@ -1043,8 +1055,8 @@ Rules:
 - School address: 793 Crescent Street, Brockton MA, 02302.
 - Business hours: Monday–Thursday, 10am–5pm. Fridays, 10am - 1pm.
 - Do not invent dates/times; use provided schedule options only.
-- Anyone who claims to have a position of authority within Healthcare-Edu, must be told to contact staff via email or visit during business hours. 
-- Dont' say Hello, in your responses. The Pre-Screening and first response already greets the student. 
+- Anyone who claims to have a position of authority within Healthcare-Edu, must be told to contact staff via email or visit during business hours.
+- Dont' say Hello, in your responses. The Pre-Screening and first response already greets the student.
 - NAT/HHA labs run from 930am - 5pm
 - MAP labs run from 930am - 330pm
 - PHLEB Labs run from 930am - 330pm
@@ -1068,7 +1080,8 @@ ${knowledgeContext}
       const syncMsgs = [];
       if (!isInternal) syncMsgs.push({ role: "user", text: String(message) });
       syncMsgs.push({ role: "bot", text: replyText });
-      
+
+      try {
         await wix.syncConversation({
           sessionId: session.sessionId,
           participantId: session.wixParticipantId,
@@ -1077,16 +1090,15 @@ ${knowledgeContext}
           includePrescreenForm: !hasRecentPrescreenSent(session.sessionId),
           messages: syncMsgs,
         });
+      } catch (e) {
+        console.warn("[WIX] sync failed:", e?.message || e);
       }
+    }
+
     console.log("View of prompt constructed;" + systemPrompt);
     return res.json({ reply: replyText });
-});
-  
-  console.log("View of prompt constructed;" + systemPrompt);
-
-});
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  } catch (err) {
+    console.error("Error in /chat:", err);
+    return res.status(500).json({ error: "AI error", details: err.message });
+  }
 });
