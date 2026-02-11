@@ -14,11 +14,15 @@ const AUTOMATION_WEBHOOK = process.env.WIX_AUTOMATION_WEBHOOK_URL; // the manage
 async function post(path, body) {
   if (!BASE) throw new Error("WIX_BRIDGE_BASE_URL not set");
 
+  const key = (API_KEY || "").trim(); // <-- define it here (in scope)
+
+  console.log("[WIX] bridge key present:", Boolean(key), "len:", key.length);
+
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(API_KEY ? { "X-Bridge-Key": key } : {}),
+      ...(key ? { "X-Bridge-Key": key } : {}),
     },
     body: JSON.stringify(body),
   });
