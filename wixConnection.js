@@ -4,7 +4,8 @@
  * - Triggers Wix Automations webhook for prescreen record/contact creation
  */
 
-const fetch = require("node-fetch");
+const fetchMod = require("node-fetch");
+const fetch = fetchMod.default || fetchMod;
 
 const BASE = process.env.WIX_BRIDGE_BASE_URL;          // e.g. https://yourwixsite.com/_functions  (or _functions-dev)
 const API_KEY = process.env.WIX_BRIDGE_API_KEY;        // must match Wix secret CHATBOT_BRIDGE_KEY
