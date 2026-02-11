@@ -47,26 +47,55 @@ function recommendCourses(courseIndexRows, certificateGoals) {
     };
   }
 
-  // Greedy: recommend courses whose certificates_included overlap goals
-  const matches = courseIndexRows.filter(row => {
+  const goalSet = new Set(normalizedGoals);
+
+  const includedSetForRow = (row) => {
     const included = String(row.certificates_included || "")
       .toLowerCase()
       .split(",")
-      .map(s => s.trim());
-    return normalizedGoals.some(g => included.includes(g));
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(normalizeGoal); // apply same normalization (CNA/NAT etc.)
+
+    return new Set(included);
+  };
+
+  const setsEqual = (a, b) => {
+    if (a.size !== b.size) return false;
+    for (const v of a) if (!b.has(v)) return false;
+    return true;
+  };
+
+  // 1) PERFECT MATCH: row cert set exactly equals selected goals set
+  const perfectMatches = courseIndexRows.filter(row => {
+    const incSet = includedSetForRow(row);
+    return setsEqual(incSet, goalSet);
   });
 
-  // If nothing matched, fall back to most comprehensive course (highest cert count)
-  if (!matches.length && courseIndexRows.length) {
-    const sorted = [...courseIndexRows].sort((a, b) => {
-      const aCount = String(a.certificates_included || "").split(",").length;
-      const bCount = String(b.certificates_included || "").split(",").length;
-      return bCount - aCount;
-    });
-    return { recommended: [sorted[0]], normalizedGoals };
+  if (perfectMatches.length) {
+    return { recommended: perfectMatches, normalizedGoals, matchType: "perfect" };
   }
 
-  return { recommended: matches, normalizedGoals };
+  // 2) FALLBACK: overlap match (your existing behavior)
+  const partialMatches = courseIndexRows.filter(row => {
+    const incSet = includedSetForRow(row);
+    for (const g of goalSet) {
+      if (incSet.has(g)) return true;
+    }
+    return false;
+  });
+
+  // 3) If nothing matched, fall back to most comprehensive course (highest cert count)
+  if (!partialMatches.length && courseIndexRows.length) {
+    const sorted = [...courseIndexRows].sort((a, b) => {
+      const aCount = String(a.certificates_included || "").split(",").filter(Boolean).length;
+      const bCount = String(b.certificates_included || "").split(",").filter(Boolean).length;
+      return bCount - aCount;
+    });
+    return { recommended: [sorted[0]], normalizedGoals, matchType: "fallback" };
+  }
+
+  return { recommended: partialMatches, normalizedGoals, matchType: "partial" };
 }
 
 
