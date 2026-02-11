@@ -260,7 +260,7 @@ function validateStep(step) {
   return true;
 }
 
-async function sendToChat(message) {
+async function sendToChat(message, meta) {
   const sessionId = getOrCreateSessionId();
   const prescreen = loadPrescreen();
 
@@ -268,6 +268,7 @@ async function sendToChat(message) {
     message,
     session: { sessionId, prescreenCompleted: isPrescreenCompleted() },
     prescreen,
+    meta: meta || {},
   };
 
   const res = await fetch("/chat", {
@@ -361,6 +362,20 @@ async function initPrescreen() {
     const prescreen = buildPrescreenPayload();
     savePrescreen(prescreen);
     setPrescreenCompleted(true);
+
+  //trigger prescreen form collection
+    fetch("/prescreen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session: { sessionId: getOrCreateSessionId() },
+        prescreen,
+      }),
+    }).catch(console.warn);
+    
+    // later inside setTimeout auto-trigger:
+    const reply = await sendToChat(trigger, { internal: true });
+    addMessage("bot", reply);
 
     //start chat
     hide(overlay);
