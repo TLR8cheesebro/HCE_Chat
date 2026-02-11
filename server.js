@@ -1069,7 +1069,6 @@ ${knowledgeContext}
       if (!isInternal) syncMsgs.push({ role: "user", text: String(message) });
       syncMsgs.push({ role: "bot", text: replyText });
       
-      try {
         await wix.syncConversation({
           sessionId: session.sessionId,
           participantId: session.wixParticipantId,
@@ -1078,17 +1077,9 @@ ${knowledgeContext}
           includePrescreenForm: !hasRecentPrescreenSent(session.sessionId),
           messages: syncMsgs,
         });
-      } catch (e) {
-        console.warn("[WIX] sync failed:", e?.message || e);
       }
-    }
     console.log("View of prompt constructed;" + systemPrompt);
     return res.json({ reply: replyText });
-
-  } catch (err) {
-    console.error("Error in /chat:", err);
-    return res.status(500).json({ error: "AI error", details: err.message });
-  }
 });
   
   console.log("View of prompt constructed;" + systemPrompt);
