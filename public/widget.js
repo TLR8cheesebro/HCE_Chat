@@ -407,7 +407,7 @@ async function initPrescreen() {
             : "Sorry — I had trouble generating your recommendation. Please type any question and I’ll help."
         );
       }
-    }, 3000);
+    }, 2000);
   }
 });
 
