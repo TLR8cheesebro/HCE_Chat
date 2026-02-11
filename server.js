@@ -1072,8 +1072,8 @@ ${knowledgeContext}
       try {
         await wix.syncConversation({
           sessionId: session.sessionId,
-          participant: session.wixParticipantId,
-          lead: prescreen.lead,
+          participantId: session.wixParticipantId,
+          lead: prescreen?.lead,
           prescreen,
           includePrescreenForm: !hasRecentPrescreenSent(session.sessionId),
           messages: syncMsgs,
@@ -1082,12 +1082,14 @@ ${knowledgeContext}
         console.warn("[WIX] sync failed:", e?.message || e);
       }
     }
-
+    console.log("View of prompt constructed;" + systemPrompt);
     return res.json({ reply: replyText });
+
   } catch (err) {
     console.error("Error in /chat:", err);
-    res.status(500).json({ error: "AI error", details: err.message });
+    return res.status(500).json({ error: "AI error", details: err.message });
   }
+});
   
   console.log("View of prompt constructed;" + systemPrompt);
 
