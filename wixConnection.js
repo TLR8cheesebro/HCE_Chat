@@ -18,7 +18,7 @@ async function post(path, body) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(API_KEY ? { "X-Bridge-Key": API_KEY } : {}),
+      ...(API_KEY ? { "X-Bridge-Key": key } : {}),
     },
     body: JSON.stringify(body),
   });
