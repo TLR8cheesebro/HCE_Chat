@@ -38,7 +38,10 @@ async function triggerPrescreenAutomation(payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-
+  
+  const key = (API_KEY || "").trim();
+  console.log("[WIX] bridge key present:", Boolean(key), "len:", key.length);
+  
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Automation webhook error ${res.status}: ${text}`);
