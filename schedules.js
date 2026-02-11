@@ -6,7 +6,13 @@
  */
 
 function parseDateTime(opt) {
-    console.log("I've begun scheduling logic");
+  // Prefer ISO datetime if provided by Wix
+  if (opt.startDateTimeISO) {
+    const d = new Date(opt.startDateTimeISO);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Fallback
   const d = new Date(`${opt.startDate}T${opt.startTime}`);
   return isNaN(d.getTime()) ? null : d;
 }
