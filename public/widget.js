@@ -398,4 +398,12 @@ async function initPrescreen() {
     }, 3000);
   }
 });
-} //is this enough curly brackets :'(
+} 
+
+// initiate
+(async function main() {
+  console.log("initiating Chat instance.");
+  getOrCreateSessionId();
+  await initPrescreen();
+  initChatForm();
+})();
