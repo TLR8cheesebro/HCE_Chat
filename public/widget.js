@@ -350,37 +350,33 @@ async function initPrescreen() {
   });
 
   $("nextBtn").addEventListener("click", () => {
-    if (!validateStep(step)) return;
+  if (!validateStep(step)) return;
 
-    if (step < 3) {
-      step += 1;
-      setStep(step);
-      return;
-    }
+  if (step < 3) {
+    step += 1;
+    setStep(step);
+    return;
+  }
 
-    // Step 3 submit
-    const prescreen = buildPrescreenPayload();
-    savePrescreen(prescreen);
-    setPrescreenCompleted(true);
+  // Step 3 submit
+  const prescreen = buildPrescreenPayload();
+  savePrescreen(prescreen);
+  setPrescreenCompleted(true);
 
-  //trigger prescreen form collection
-    fetch("/prescreen", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session: { sessionId: getOrCreateSessionId() },
-        prescreen,
-      }),
-    }).catch(console.warn);
-    
-    // later inside setTimeout auto-trigger:
-    const reply = await sendToChat(trigger, { internal: true });
-    addMessage("bot", reply);
+  // Trigger prescreen workflow (non-blocking)
+  fetch("/prescreen", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session: { sessionId: getOrCreateSessionId() },
+      prescreen,
+    }),
+  }).catch(console.warn);
 
-    //start chat
-    hide(overlay);
+  // Start chat
+  hide(overlay);
 
-  // Immediate “please wait” greeting 
+  // Immediate “please wait” greeting
   addMessage(
     "bot",
     prescreen.language === "es"
@@ -399,7 +395,8 @@ async function initPrescreen() {
             ? "Genera mi recomendación del curso y las 2 mejores opciones de horario si están disponibles. Luego pregúntame si estoy listo(a) para inscribirme o si tengo preguntas."
             : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
 
-        const reply = await sendToChat(trigger);
+        // mark as internal so the server can avoid logging it as a user message in Wix Inbox
+        const reply = await sendToChat(trigger, { internal: true });
         addMessage("bot", reply);
       } catch (err) {
         console.error(err);
@@ -413,11 +410,10 @@ async function initPrescreen() {
     }, 3000);
   }
 });
-} 
 
 // initiate
 (async function main() {
-  console.log("initiating Chat instance.");
+  console.log("initiating Chat instance. . .");
   getOrCreateSessionId();
   await initPrescreen();
   initChatForm();
