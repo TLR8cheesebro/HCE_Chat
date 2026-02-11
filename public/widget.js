@@ -2,7 +2,7 @@
 // 3-step prescreen overlay + required lead capture
 // Sends new payload shape to /chat:
 // { message, session:{sessionId,prescreenCompleted}, prescreen:{...} }
-// Send a recommendation after 3 seconds
+// Send a recommendation after 2 seconds
 
 const STORAGE_KEYS = {
   sessionId: "hedu_session_id",
@@ -349,72 +349,74 @@ async function initPrescreen() {
     }
   });
 
-  $("nextBtn").addEventListener("click", () => {
-  if (!validateStep(step)) return;
+    $("nextBtn").addEventListener("click", () => {
+    if (!validateStep(step)) return;
 
-  if (step < 3) {
-    step += 1;
-    setStep(step);
-    return;
-  }
+    if (step < 3) {
+      step += 1;
+      setStep(step);
+      return;
+    }
 
-  // Step 3 submit
-  const prescreen = buildPrescreenPayload();
-  savePrescreen(prescreen);
-  setPrescreenCompleted(true);
+    // Step 3 submit
+    const prescreen = buildPrescreenPayload();
+    savePrescreen(prescreen);
+    setPrescreenCompleted(true);
 
-  // Trigger prescreen workflow (non-blocking)
-  fetch("/prescreen", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      session: { sessionId: getOrCreateSessionId() },
-      prescreen,
-    }),
-  }).catch(console.warn);
+    // Trigger prescreen workflow (non-blocking)
+    fetch("/prescreen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session: { sessionId: getOrCreateSessionId() },
+        prescreen,
+      }),
+    }).catch(console.warn);
 
-  // Start chat
-  hide(overlay);
+    // Start chat
+    hide(overlay);
 
-  // Immediate “please wait” greeting
-  addMessage(
-    "bot",
-    prescreen.language === "es"
-      ? "¡Gracias! Ya tengo tu información. Por favor espera mientras genero tu recomendación…"
-      : "Thanks! I have your info. Please wait while I generate your recommendation . . ."
-  );
+    // Immediate “please wait” greeting
+    addMessage(
+      "bot",
+      prescreen.language === "es"
+        ? "¡Gracias! Ya tengo tu información. Por favor espera mientras genero tu recomendación…"
+        : "Thanks! I have your info. Please wait while I generate your recommendation . . ."
+    );
 
-  // After 3 seconds, auto-request the recommendation + schedule from the server
-  if (!hasSentAutoReco()) {
-    setSentAutoReco();
+    // After 3 seconds, auto-request the recommendation + schedule from the server
+    if (!hasSentAutoReco()) {
+      setSentAutoReco();
 
-    setTimeout(async () => {
-      try {
-        const trigger =
-          prescreen.language === "es"
-            ? "Genera mi recomendación del curso y las 2 mejores opciones de horario si están disponibles. Luego pregúntame si estoy listo(a) para inscribirme o si tengo preguntas."
-            : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
+      setTimeout(async () => {
+        try {
+          const trigger =
+            prescreen.language === "es"
+              ? "Genera mi recomendación del curso y las 2 mejores opciones de horario si están disponibles. Luego pregúntame si estoy listo(a) para inscribirme o si tengo preguntas."
+              : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
 
-        // mark as internal so the server can avoid logging it as a user message in Wix Inbox
-        const reply = await sendToChat(trigger, { internal: true });
-        addMessage("bot", reply);
-      } catch (err) {
-        console.error(err);
-        addMessage(
-          "bot",
-          prescreen.language === "es"
-            ? "Lo siento—tuve un problema generando tu recomendación. Por favor escribe cualquier pregunta y te ayudo."
-            : "Sorry — I had trouble generating your recommendation. Please type any question and I’ll help."
-        );
-      }
-    }, 2000);
-  }
-});
+          // mark as internal so the server can avoid logging it as a user message in Wix Inbox
+          const reply = await sendToChat(trigger, { internal: true });
+          addMessage("bot", reply);
+        } catch (err) {
+          console.error(err);
+          addMessage(
+            "bot",
+            prescreen.language === "es"
+              ? "Lo siento—tuve un problema generando tu recomendación. Por favor escribe cualquier pregunta y te ayudo."
+              : "Sorry — I had trouble generating your recommendation. Please type any question and I’ll help."
+          );
+        }
+      }, 2000); 
+    }
+  });
+} // ✅ CLOSES initPrescreen()
 
-// initiate
+// initiate (must be OUTSIDE initPrescreen)
 (async function main() {
   console.log("initiating Chat instance. . .");
   getOrCreateSessionId();
   await initPrescreen();
   initChatForm();
 })();
+
