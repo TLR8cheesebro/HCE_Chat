@@ -10,6 +10,23 @@ try {
   google = null;
 }
 
+// Prevent duplicate prescreen automation calls + duplicate prescreen-form inbox messages
+const prescreenSent = new Map(); // sessionId -> timestamp
+const PRESCREEN_SENT_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function hasRecentPrescreenSent(sessionId) {
+  const t = prescreenSent.get(sessionId);
+  return t && Date.now() - t < PRESCREEN_SENT_TTL_MS;
+}
+function markPrescreenSent(sessionId) {
+  prescreenSent.set(sessionId, Date.now());
+  // cheap cleanup
+  for (const [k, v] of prescreenSent.entries()) {
+    if (Date.now() - v > PRESCREEN_SENT_TTL_MS) prescreenSent.delete(k);
+  }
+}
+
+
 // New modules (Group A)
 const { recommendCourses, normalizeGoals } = require("./recommendation");
 const { selectBestTwo } = require("./schedules");
@@ -829,6 +846,39 @@ app.get("/kb-status", async (req, res) => {
     sampleDocs: kb.docs.slice(0, 5).map((d) => ({ name: d.name, path: d.path, programTag: d.programTag })),
   });
 });
+// Prescreen route added to the system
+
+app.post("/prescreen", async (req, res) => {
+  console.log("I am beginning prescreen caprute logic. . .");
+  try {
+    const body = req.body || {};
+    const prescreen = body.prescreen;
+    const session = body.session || {};
+    const sessionId = session.sessionId;
+
+    if (!sessionId || !prescreen) return res.status(400).json({ error: "Missing sessionId or prescreen" });
+
+    const pv = validatePrescreen(prescreen);
+    if (!pv.ok) return res.status(400).json({ error: pv.reason });
+
+    if (ENABLE_WIX_SYNC && wix?.triggerPrescreenAutomation && !hasRecentPrescreenSent(sessionId)) {
+      await wix.triggerPrescreenAutomation({
+        sessionId,
+        prescreen,
+        lead: prescreen.lead,
+        marketingConsent: prescreen.marketingConsent,
+      });
+      markPrescreenSent(sessionId);
+    }
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.warn("Prescreen webhook failed:", e?.message || e);
+    return res.json({ ok: false }); // non-fatal
+  }
+});
+
+// End Prescrren route logic
 
 // AI Chat Route (new payload shape supported; backward compatible)
 app.post("/chat", async (req, res) => {
@@ -865,6 +915,24 @@ app.post("/chat", async (req, res) => {
             : "It looks like some pre-screen info is missing. Please give me your name, phone, email, so we can try again.",
       });
     }
+
+    const isInternal = !!body?.meta?.internal;
+
+    // Backup: trigger automation if it hasn't run yet
+    if (ENABLE_WIX_SYNC && wix?.triggerPrescreenAutomation && session?.sessionId && !hasRecentPrescreenSent(session.sessionId)) {
+      try {
+        await wix.triggerPrescreenAutomation({
+          sessionId: session.sessionId,
+          prescreen,
+          lead: prescreen.lead,
+          marketingConsent: prescreen.marketingConsent,
+        });
+        markPrescreenSent(session.sessionId);
+      } catch (e) {
+        console.warn("[WIX] prescreen automation failed:", e?.message || e);
+      }
+    }
+
 
     const kb = await loadKnowledgeBase();
 
@@ -1017,15 +1085,17 @@ ${knowledgeContext}
 
     // Live sync to Wix Inbox AFTER prescreen complete
     if (ENABLE_WIX_SYNC && wix?.syncConversation) {
+      const syncMsgs = [];
+      if (!isInternal) syncMsgs.push({ role: "user", text: String(message) });
+      syncMsgs.push({ role: "bot", text: replyText });
+      
       try {
         await wix.syncConversation({
           sessionId: session.sessionId,
           lead: prescreen.lead,
           prescreen,
-          messages: [
-            { role: "user", text: String(message) },
-            { role: "bot", text: replyText },
-          ],
+          includePrescreenForm: !hasRecentPrescreenSent(session.sessionId),
+          messages: syncMsgs,
         });
       } catch (e) {
         console.warn("[WIX] sync failed:", e?.message || e);
