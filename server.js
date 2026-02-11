@@ -1047,7 +1047,7 @@ Always respond in the user's preferred language (language code): ${language}.
 
 Pre-screen summary:
 - Name: ${prescreen.lead?.fullName}
-- Availability: ${prescreen.availabilityType}${prescreen.availabilityType === "daysOff" ? ` (days: ${(prescreen.daysOff || []).join(", ")})` : ""}
+- Availability (The best days for the student to go to class): ${prescreen.availabilityType}${prescreen.availabilityType === "daysOff" ? ` (days: ${(prescreen.daysOff || []).join(", ")})` : ""}
 - Goals: ${(normalizedGoals || []).join(", ")}
 
 ${recommendationBlock}
