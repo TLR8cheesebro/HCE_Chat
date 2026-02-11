@@ -849,7 +849,7 @@ app.get("/kb-status", async (req, res) => {
 // Prescreen route added to the system
 
 app.post("/prescreen", async (req, res) => {
-  console.log("I am beginning prescreen caprute logic. . .");
+  console.log("I am beginning prescreen capture logic. . .");
   try {
     const body = req.body || {};
     const prescreen = body.prescreen;
@@ -878,7 +878,7 @@ app.post("/prescreen", async (req, res) => {
   }
 });
 
-// End Prescrren route logic
+// End Prescreen route logic
 
 // AI Chat Route (new payload shape supported; backward compatible)
 app.post("/chat", async (req, res) => {
@@ -1095,7 +1095,6 @@ ${knowledgeContext}
       }
     }
 
-    console.log("View of prompt constructed;" + systemPrompt);
     return res.json({ reply: replyText });
   } catch (err) {
     console.error("Error in /chat:", err);
