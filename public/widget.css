@@ -239,6 +239,7 @@ body {
   align-self: flex-end;
   background: var(--muted);
   border-color: var(--line);
+  color: rgb(0,0,0);
 }
 .msg.bot {
   align-self: flex-start;
