@@ -958,26 +958,6 @@ app.post("/chat", async (req, res) => {
           ? "Gracias — el programa de Asistente Médico Clínico es un poco más complejo. Un asesor del curso te ayudará personalmente. ¿Prefieres llamada o mensaje de texto?"
           : "Thanks — Clinical Medical Assistant is a bit more complex. A course advisor will help you personally. Do you prefer a phone call or text message?";
 
-      // Optional Wix sync (only after prescreen)
-      if (ENABLE_WIX_SYNC && wix?.syncConversation) {
-        try {
-          await wix.syncConversation({
-            sessionId: session.sessionId,
-            lead: prescreen.lead,
-            prescreen,
-            messages: [
-              { role: "user", text: String(message) },
-              { role: "bot", text: handoffText },
-            ],
-          });
-        } catch (e) {
-          // non-fatal
-          console.warn("[WIX] sync failed (handoff):", e?.message || e);
-        }
-      }
-
-      return res.json({ reply: handoffText });
-    }
 
     // Pick top recommendation (single course gameplan)
     const primary = (rec.recommended || [])[0] || null;
@@ -1092,6 +1072,7 @@ ${knowledgeContext}
       try {
         await wix.syncConversation({
           sessionId: session.sessionId,
+          participant: session.wixParticipantId,
           lead: prescreen.lead,
           prescreen,
           includePrescreenForm: !hasRecentPrescreenSent(session.sessionId),
