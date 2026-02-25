@@ -19,6 +19,8 @@
   "homepage": "https://github.com/TLR8cheesebro/HCE_Chat#readme",
   "description": "",
   "dependencies": {
+    "@wix/inbox": "^1.0.102",
+    "@wix/sdk": "^1.21.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
