@@ -176,11 +176,13 @@ function setDaysOffEnabled(enabled) {
 }
 
 function buildPrescreenPayload() {
-  const language = $("languageSelect").value || "en";
-  const certificateGoals = getSelectedGoals();
+  const langCode = $("languageSelect").value || "en";
+  const langLabel = $("languageSelect").selectedOptions?.[0]?.textContent?.trim() || "";
+  const languagePreference = `${langCode}|${langLabel || langCode}`;
 
+  const certificateGoals = getSelectedGoals(); // array (keep for chat)
   const availabilityType = getAvailabilityType();
-  const daysOff = availabilityType === "daysOff" ? getDaysOff() : [];
+  const daysOff = availabilityType === "daysOff" ? getDaysOff() : []; // array (keep for chat)
 
   const fullName = $("fullName").value.trim();
   const phone = sanitizePhone($("phone").value);
@@ -191,15 +193,26 @@ function buildPrescreenPayload() {
   const timestampISO = new Date().toISOString();
 
   return {
-    language,
-    certificateGoals,
+    // keep these for your server + chat flow
+    language: langCode,
+    languagePreference, // <-- NEW
+    certificateGoals,   // <-- array, used by chat + recommendation
     availabilityType,
-    daysOff,
-    lead: { fullName, phone, email },
+    daysOff,            // <-- array, used by schedules logic
+
+    // lead object now includes placeholders (per your desired webhook schema)
+    lead: {
+      email,
+      phone,
+      fullName,
+      firstName: "",
+      lastName: "",
+    },
+
     marketingConsent: {
       optIn,
       timestampISO,
-      language,
+      language: langCode,
       checkboxLabel,
     },
   };
@@ -419,4 +432,3 @@ async function initPrescreen() {
   await initPrescreen();
   initChatForm();
 })();
-
