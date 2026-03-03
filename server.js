@@ -846,28 +846,67 @@ app.get("/kb-status", async (req, res) => {
     sampleDocs: kb.docs.slice(0, 5).map((d) => ({ name: d.name, path: d.path, programTag: d.programTag })),
   });
 });
-// Prescreen route added to the system
 
+// Prescreen route added to the system
 app.post("/prescreen", async (req, res) => {
   console.log("I am beginning prescreen capture logic. . .");
+
   try {
     const body = req.body || {};
     const prescreen = body.prescreen;
     const session = body.session || {};
     const sessionId = session.sessionId;
 
-    if (!sessionId || !prescreen) return res.status(400).json({ error: "Missing sessionId or prescreen" });
+    if (!sessionId || !prescreen) {
+      return res.status(400).json({ error: "Missing sessionId or prescreen" });
+    }
 
     const pv = validatePrescreen(prescreen);
-    if (!pv.ok) return res.status(400).json({ error: pv.reason });
+    if (!pv.ok) {
+      return res.status(400).json({ error: pv.reason });
+    }
 
     if (ENABLE_WIX_SYNC && wix?.triggerPrescreenAutomation && !hasRecentPrescreenSent(sessionId)) {
-      await wix.triggerPrescreenAutomation({
+      const lead = prescreen.lead || {};
+      const consent = prescreen.marketingConsent || {};
+
+      const goalsStr = Array.isArray(prescreen.certificateGoals)
+        ? prescreen.certificateGoals.join(", ")
+        : String(prescreen.certificateGoals || "");
+
+      const daysOffStr = Array.isArray(prescreen.daysOff)
+        ? prescreen.daysOff.join(",")
+        : String(prescreen.daysOff || "");
+
+      const languagePreference = prescreen.languagePreference
+        ? String(prescreen.languagePreference)
+        : `${prescreen.language || "en"}|${prescreen.language || "en"}`;
+
+      const webhookPayload = {
+        source: "hce_chatbot",
         sessionId,
-        prescreen,
-        lead: prescreen.lead,
-        marketingConsent: prescreen.marketingConsent,
-      });
+        lead: {
+          email: String(lead.email || ""),
+          phone: String(lead.phone || ""),
+          fullName: String(lead.fullName || ""),
+          firstName: String(lead.firstName || ""),
+          lastName: String(lead.lastName || ""),
+        },
+        prescreen: {
+          certificateGoals: goalsStr,
+          availabilityType: String(prescreen.availabilityType || ""),
+          daysOff: daysOffStr,
+          languagePreference,
+        },
+        consent: {
+          optIn: !!consent.optIn,
+          timestampISO: String(consent.timestampISO || ""),
+          language: String(consent.language || prescreen.language || "en"),
+          checkboxLabel: String(consent.checkboxLabel || ""),
+        },
+      };
+
+      await wix.triggerPrescreenAutomation(webhookPayload);
       markPrescreenSent(sessionId);
     }
 
@@ -877,7 +916,6 @@ app.post("/prescreen", async (req, res) => {
     return res.json({ ok: false }); // non-fatal
   }
 });
-
 // End Prescreen route logic
 
 // AI Chat Route (new payload shape supported; backward compatible)
@@ -1105,4 +1143,3 @@ ${knowledgeContext}
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
