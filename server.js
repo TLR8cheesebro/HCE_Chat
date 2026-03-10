@@ -227,7 +227,69 @@ function buildScheduleFollowUpBlock({ type = "", requestedDay = "", options = []
   return `${intro}\n${buildScheduleRowsForPrompt(options)}\n${instructions}`;
 }
 
+function isReadyToEnrollIntent(message = "", meta = {}) {
+  if (meta?.intent === "enroll") return true;
+
+  const lower = String(message || "").toLowerCase().trim();
+  if (!lower) return false;
+
+  const phrases = [
+    "ready to enroll",
+    "i'm ready to enroll",
+    "im ready to enroll",
+    "ready to sign up",
+    "sign me up",
+    "enroll me",
+    "i want to enroll",
+    "let's enroll",
+    "lets enroll",
+    "register me",
+    "i'm ready",
+    "im ready",
+    "how do i enroll",
+    "how do i sign up",
+    "how do i register",
+    "how do i pay",
+    "where do i pay",
+    "i want to get started",
+  ];
+
+  return phrases.some((phrase) => lower.includes(phrase));
+}
+
+function buildEnrollReply(enrollUrl) {
+  if (!enrollUrl) {
+    return "Please contact staff for help with enrollment. We’ll make sure you get the correct payment link.";
+  }
+
+  return `Click here ${enrollUrl} in order to begin the enrollment process with your first payment. Your online course is sent to the email you enter upon enrolling.`;
+}
+
 // New modules (Group A)
+
+async function syncWixConversationIfNeeded({ session, prescreen, isInternal, userMessage, botReply }) {
+  if (!(ENABLE_WIX_SYNC && wix?.syncConversation)) return;
+
+  const syncMsgs = [];
+  if (!isInternal && userMessage) syncMsgs.push({ role: "user", text: String(userMessage) });
+  if (botReply) syncMsgs.push({ role: "bot", text: String(botReply) });
+
+  if (!syncMsgs.length) return;
+
+  try {
+    await wix.syncConversation({
+      sessionId: session?.sessionId,
+      participantId: session?.wixParticipantId,
+      lead: prescreen?.lead,
+      prescreen,
+      includePrescreenForm: !hasRecentPrescreenSent(session?.sessionId),
+      messages: syncMsgs,
+    });
+  } catch (e) {
+    console.warn("[WIX] sync failed:", e?.message || e);
+  }
+}
+
 const { recommendCourses, normalizeGoals } = require("./recommendation");
 const {
   buildSchedulePlan,
@@ -1217,6 +1279,9 @@ app.post("/chat", async (req, res) => {
     const courseCodes = primary?.course_code ? [primary.course_code] : [];
     const courseMeta = primary || null;
 
+    const enrollUrl = String(primary?.link || "").trim();
+    const readyToEnroll = isReadyToEnrollIntent(message, body?.meta || {});
+
     // Pull payment info (course-code keyed)
     const paymentRow = primary ? findPaymentRow(kb.paymentIndex, primary.course_code) : null;
 
@@ -1250,6 +1315,24 @@ app.post("/chat", async (req, res) => {
 
     const sessionScheduleState = setScheduleSessionState(session.sessionId, primary?.course_code || "", schedulePlan);
     let scheduleFollowUpBlock = "";
+
+    if (!isInternal && readyToEnroll) {
+      const enrollReply = buildEnrollReply(enrollUrl);
+
+      await syncWixConversationIfNeeded({
+        session,
+        prescreen,
+        isInternal,
+        userMessage: message,
+        botReply: enrollReply,
+      });
+
+      return res.json({
+        reply: enrollReply,
+        showEnrollButton: Boolean(enrollUrl),
+        enrollUrl: enrollUrl || "",
+      });
+    }
 
     if (!isInternal && sessionScheduleState) {
       const requestedDay = detectRequestedDay(message);
@@ -1360,29 +1443,23 @@ ${knowledgeContext}
     const replyText = response.output_text || "Sorry, I couldn't generate a response.";
 
     // Live sync to Wix Inbox AFTER prescreen complete
-    if (ENABLE_WIX_SYNC && wix?.syncConversation) {
-      const syncMsgs = [];
-      if (!isInternal) syncMsgs.push({ role: "user", text: String(message) });
-      syncMsgs.push({ role: "bot", text: replyText });
+    await syncWixConversationIfNeeded({
+      session,
+      prescreen,
+      isInternal,
+      userMessage: message,
+      botReply: replyText,
+    });
 
-      try {
-        await wix.syncConversation({
-          sessionId: session.sessionId,
-          participantId: session.wixParticipantId,
-          lead: prescreen?.lead,
-          prescreen,
-          includePrescreenForm: !hasRecentPrescreenSent(session.sessionId),
-          messages: syncMsgs,
-        });
-      } catch (e) {
-        console.warn("[WIX] sync failed:", e?.message || e);
-      }
-    }
-
-    return res.json({ reply: replyText });
+    return res.json({
+      reply: replyText,
+      showEnrollButton: false,
+      enrollUrl: "",
+    });
+    
   } catch (err) {
-    console.error("Error in /chat:", err);
-    return res.status(500).json({ error: "AI error", details: err.message });
+    console.error("Error in /chat route:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
