@@ -3,69 +3,56 @@
  * - Normalizes certificate goals from widget labels + course index values
  * - Computes recommended course(s) from the course index
  * - Handles CMA handoff rule
- * - Greedy ranking:
- *    1) perfect match first
- *    2) otherwise highest overlap with requested goals
- *    3) then most certificates included
- *    4) then lowest numeric priority
+ * - Perfect matches always win and return immediately
+ * - Otherwise greedy ranking:
+ *    1) highest overlap with requested goals
+ *    2) most certificates included
+ *    3) lowest numeric priority
  */
 
-const SYNONYM_RULES = [
-  {
-    canonical: "nursing assistant training",
-    matches: [
-      "cna",
-      "nat",
-      "nursing assistant",
-      "nursing assistant training",
-      "certified nursing assistant",
-    ],
-  },
-  {
-    canonical: "home health aide",
-    matches: [
-      "hha",
-      "home health aide",
-    ],
-  },
-  {
-    canonical: "medication administration program",
-    matches: [
-      "map",
-      "medication administration",
-      "medication administration program",
-    ],
-  },
-  {
-    canonical: "phlebotomy technician",
-    matches: [
-      "phleb",
-      "phlebotomy",
-      "phlebotomy technician",
-    ],
-  },
-  {
-    canonical: "ekg technician",
-    matches: [
-      "ekg",
-      "ekg technician",
-    ],
-  },
-  {
-    canonical: "clinical medical assistant",
-    matches: [
-      "cma",
-      "clinical medical assistant",
-    ],
-  },
-];
+const CANONICAL_MAP = new Map([
+  ["cna", "nursing assistant training"],
+  ["nat", "nursing assistant training"],
+  ["nursing assistant", "nursing assistant training"],
+  ["nursing assistant training", "nursing assistant training"],
+  ["certified nursing assistant", "nursing assistant training"],
+
+  ["hha", "home health aide"],
+  ["home health aide", "home health aide"],
+  ["home health aide training", "home health aide"],
+  ["home health aide training program", "home health aide"],
+
+  ["map", "medication administration program"],
+  ["medication administration", "medication administration program"],
+  ["medication administration program", "medication administration program"],
+
+  ["phleb", "phlebotomy technician"],
+  ["phlebotomy", "phlebotomy technician"],
+  ["phlebotomy technician", "phlebotomy technician"],
+  ["phlebotomy technician training", "phlebotomy technician"],
+  ["phlebotomy technician training program", "phlebotomy technician"],
+
+  ["ekg", "ekg technician"],
+  ["ekg technician", "ekg technician"],
+  ["ekg technician training", "ekg technician"],
+  ["ekg technician training program", "ekg technician"],
+
+  ["cma", "clinical medical assistant"],
+  ["clinical medical assistant", "clinical medical assistant"],
+  ["clinical medical assistant training", "clinical medical assistant"],
+  ["clinical medical assistant training program", "clinical medical assistant"],
+]);
 
 function cleanLabel(value = "") {
   return String(value || "")
     .toLowerCase()
     .trim()
-    .replace(/\([^)]*\)/g, "")   // removes things like (CNA/NAT), (HHA), (MAP)
+    .replace(/\([^)]*\)/g, "")        // remove abbreviations in parentheses
     .replace(/[\/_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\btraining program\b/g, "")
+    .replace(/\btraining\b/g, "")
+    .replace(/\bprogram\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -74,11 +61,8 @@ function normalizeGoal(goal = "") {
   const raw = String(goal || "").toLowerCase().trim();
   const cleaned = cleanLabel(raw);
 
-  for (const rule of SYNONYM_RULES) {
-    if (rule.matches.some((m) => raw.includes(m) || cleaned.includes(m))) {
-      return rule.canonical;
-    }
-  }
+  if (CANONICAL_MAP.has(raw)) return CANONICAL_MAP.get(raw);
+  if (CANONICAL_MAP.has(cleaned)) return CANONICAL_MAP.get(cleaned);
 
   return cleaned;
 }
@@ -130,20 +114,9 @@ function stripMeta(row) {
   return rest;
 }
 
-/**
- * @param {Array<Object>} courseIndexRows
- * @param {Array<string>} certificateGoals
- * @returns {{
- *   recommended: Array<Object>,
- *   normalizedGoals: Array<string>,
- *   requiresStaffHandoff?: boolean,
- *   matchType?: string
- * }}
- */
 function recommendCourses(courseIndexRows = [], certificateGoals = []) {
   const normalizedGoals = normalizeGoals(certificateGoals);
 
-  // CMA is explicitly not supported by the bot
   if (isCMA(normalizedGoals)) {
     return {
       recommended: [],
@@ -154,13 +127,15 @@ function recommendCourses(courseIndexRows = [], certificateGoals = []) {
 
   const goalSet = new Set(normalizedGoals);
 
-  // Score EVERY course row
   const scored = (courseIndexRows || []).map((row) => {
     const included = normalizeCertificatesIncluded(row);
     const includedSet = new Set(included);
 
     const overlapCount = countOverlap(goalSet, includedSet);
     const certificateCount = includedSet.size;
+
+    // exact perfect-match definition:
+    // same normalized certificate set, no extras, no missing certs
     const perfectMatch = setsEqual(goalSet, includedSet);
 
     return {
@@ -174,15 +149,12 @@ function recommendCourses(courseIndexRows = [], certificateGoals = []) {
     };
   });
 
-  // 1) PERFECT MATCHES ONLY
+  // PERFECT MATCHES WIN IMMEDIATELY
   const perfectMatches = scored
     .filter((row) => row._meta.perfectMatch)
     .sort((a, b) => {
       if (a._meta.priority !== b._meta.priority) {
         return a._meta.priority - b._meta.priority;
-      }
-      if (a._meta.certificateCount !== b._meta.certificateCount) {
-        return b._meta.certificateCount - a._meta.certificateCount;
       }
       return String(a.course_code || "").localeCompare(String(b.course_code || ""));
     });
@@ -195,7 +167,7 @@ function recommendCourses(courseIndexRows = [], certificateGoals = []) {
     };
   }
 
-  // 2) GREEDY PARTIAL MATCHES
+  // Only if no perfect match exists, use greedy fallback
   const ranked = scored
     .filter((row) => row._meta.overlapCount > 0)
     .sort((a, b) => {
@@ -219,7 +191,6 @@ function recommendCourses(courseIndexRows = [], certificateGoals = []) {
     };
   }
 
-  // 3) NOTHING MATCHED -> most comprehensive fallback
   const fallback = [...scored].sort((a, b) => {
     if (a._meta.certificateCount !== b._meta.certificateCount) {
       return b._meta.certificateCount - a._meta.certificateCount;
@@ -241,4 +212,5 @@ module.exports = {
   normalizeGoals,
   recommendCourses,
 };
+
 console.log("Modules exported. . ." + "normalizeGoals" + "recommendCourses");
