@@ -247,6 +247,15 @@ body {
   color: rgb(0,0,0);
 }
 
+.enroll-bar {
+  padding: 10px 12px 0;
+  background: rgb(255, 255, 255);
+}
+
+.enroll-btn {
+  width: 100%;
+}
+
 .chat-form {
   display: flex;
   gap: 10px;
