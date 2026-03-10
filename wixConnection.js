@@ -33,7 +33,7 @@ const BRIDGE_KEY = process.env.WIX_BRIDGE_API_KEY;   // must match Wix secret CH
 const AUTOMATION_WEBHOOK = process.env.WIX_AUTOMATION_WEBHOOK_URL; // manage.wix.com/_api/webhook-trigger/...
 
 // ---- 3) Wix REST (Inbox + Contacts) ----
-const WIX_REST_API_KEY = (process.env.WIX_API_KEY || process.env.WIX_REST_API_KEY || "").trim();
+const WIX_REST_API_KEY = (process.env.WIX_CHAT_LOG_API_KEY || process.env.WIX_REST_API_KEY || "").trim();
 const WIX_SITE_ID = (process.env.WIX_SITE_ID || "").trim();
 
 const WIX_API_BASE = "https://www.wixapis.com";
