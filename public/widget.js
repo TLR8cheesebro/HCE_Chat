@@ -481,6 +481,35 @@ function initChatForm() {
       window.open(url, "_blank", "noopener,noreferrer");
     });
   }
+
+    const homeBtn = $("homeBtn");
+  if (homeBtn) {
+    homeBtn.addEventListener("click", () => {
+      window.location.href = "https://healthcare-edu.com";
+    });
+  }
+
+  const changeGoalsBtn = $("changeGoalsBtn");
+  if (changeGoalsBtn) {
+    changeGoalsBtn.addEventListener("click", async () => {
+      const existing = loadPrescreen();
+      if (!existing) {
+        openGoalChangeMode();
+        return;
+      }
+
+      try {
+        const data = await sendToChat(
+          "I want to change my certificates.",
+          { intent: "change_certificates" }
+        );
+        handleChatResponse(data);
+      } catch (err) {
+        console.error(err);
+        openGoalChangeMode();
+      }
+    });
+  }
 }
 
 async function initPrescreen() {
@@ -521,11 +550,17 @@ async function initPrescreen() {
   setDaysOffEnabled(true);
 
   $("backBtn").addEventListener("click", () => {
-    if (step > 1) {
-      step -= 1;
-      setStep(step);
-    }
-  });
+  if (goalsEditMode) {
+    goalsEditMode = false;
+    hide($("prescreen-overlay"));
+    return;
+  }
+
+  if (step > 1) {
+    step -= 1;
+    setStep(step);
+  }
+});
 
     $("nextBtn").addEventListener("click", () => {
       const existing = loadPrescreen();
