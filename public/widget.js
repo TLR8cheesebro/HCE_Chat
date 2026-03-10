@@ -113,6 +113,14 @@ function resetStepErrors() {
   });
 }
 
+function isInIframe() {
+  try {
+    return window.self !== window.top;
+  } catch (e) {
+    return true;
+  }
+}
+
 function startRecommendationFlow(prescreen) {
   hideEnrollButton();
   clearChatLog();
@@ -453,6 +461,15 @@ async function sendToChat(message, meta) {
 function initChatForm() {
   const form = $("chat-form");
   const input = $("chat-input");
+  const homeBtn = document.getElementById("homeBtn");
+
+  if (homeBtn) {
+    if (isInIframe()) {
+      homeBtn.style.display = "none";
+    } else {
+      homeBtn.style.display = "inline-flex";
+    }
+  }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -482,7 +499,6 @@ function initChatForm() {
     });
   }
 
-    const homeBtn = $("homeBtn");
   if (homeBtn) {
     homeBtn.addEventListener("click", () => {
       window.location.href = "https://healthcare-edu.com";
