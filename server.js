@@ -26,10 +26,217 @@ function markPrescreenSent(sessionId) {
   }
 }
 
+const scheduleSessionState = new Map(); // sessionId -> schedule context for follow-up schedule questions
+const SCHEDULE_SESSION_TTL_MS = Number(process.env.SCHEDULE_SESSION_TTL_MS || 6 * 60 * 60 * 1000);
+
+function cleanupScheduleSessionState() {
+  const now = Date.now();
+  for (const [sessionId, state] of scheduleSessionState.entries()) {
+    if (!state?.updatedAt || now - state.updatedAt > SCHEDULE_SESSION_TTL_MS) {
+      scheduleSessionState.delete(sessionId);
+    }
+  }
+}
+
+function getScheduleSessionState(sessionId) {
+  if (!sessionId) return null;
+  cleanupScheduleSessionState();
+  return scheduleSessionState.get(sessionId) || null;
+}
+
+function normalizeShownKeysByDay(shownKeysByDay = {}, validKeys = new Set()) {
+  const out = {};
+  for (const [dayKey, keys] of Object.entries(shownKeysByDay || {})) {
+    const kept = Array.isArray(keys) ? keys.filter((key) => validKeys.has(key)) : [];
+    if (kept.length) out[dayKey] = kept;
+  }
+  return out;
+}
+
+function addOptionsToShownMaps(shownGlobalKeys = [], shownKeysByDay = {}, options = []) {
+  const global = new Set(shownGlobalKeys || []);
+  const byDay = { ...shownKeysByDay };
+
+  for (const opt of options || []) {
+    const key = keyForOption(opt);
+    global.add(key);
+
+    const dayKey = normalizeDayValue(opt.dayOfWeek || "");
+    if (!dayKey) continue;
+    const daySet = new Set(byDay[dayKey] || []);
+    daySet.add(key);
+    byDay[dayKey] = Array.from(daySet);
+  }
+
+  return {
+    shownGlobalKeys: Array.from(global),
+    shownKeysByDay: byDay,
+  };
+}
+
+function setScheduleSessionState(sessionId, courseCode, schedulePlan) {
+  if (!sessionId) return null;
+
+  const previous = getScheduleSessionState(sessionId);
+  const sameCourse = previous?.courseCode === courseCode;
+  const rankedOptions = schedulePlan?.rankedOptions || [];
+  const validKeys = new Set(rankedOptions.map((opt) => keyForOption(opt)));
+
+  let shownGlobalKeys = sameCourse
+    ? (previous?.shownGlobalKeys || []).filter((key) => validKeys.has(key))
+    : [];
+
+  let shownKeysByDay = sameCourse
+    ? normalizeShownKeysByDay(previous?.shownKeysByDay || {}, validKeys)
+    : {};
+
+  let lastPresentedKeys = sameCourse
+    ? (previous?.lastPresentedKeys || []).filter((key) => validKeys.has(key))
+    : [];
+
+  if (!shownGlobalKeys.length && schedulePlan?.recommendedTop2?.length) {
+    const seeded = addOptionsToShownMaps(shownGlobalKeys, shownKeysByDay, schedulePlan.recommendedTop2);
+    shownGlobalKeys = seeded.shownGlobalKeys;
+    shownKeysByDay = seeded.shownKeysByDay;
+  }
+
+  if (!lastPresentedKeys.length && schedulePlan?.recommendedTop2?.length) {
+    lastPresentedKeys = schedulePlan.recommendedTop2.map((opt) => keyForOption(opt));
+  }
+
+  const nextState = {
+    updatedAt: Date.now(),
+    courseCode,
+    allOptions: schedulePlan?.allOptions || [],
+    rankedAllOptions: schedulePlan?.rankedAllOptions || [],
+    rankedOptions: rankedOptions,
+    recommendedTop2: schedulePlan?.recommendedTop2 || [],
+    alternates: schedulePlan?.alternates || [],
+    groupedByDay: schedulePlan?.groupedByDay || {},
+    shownGlobalKeys,
+    shownKeysByDay,
+    lastPresentedKeys,
+  };
+
+  scheduleSessionState.set(sessionId, nextState);
+  return nextState;
+}
+
+function rememberPresentedScheduleOptions(sessionId, options = []) {
+  const state = getScheduleSessionState(sessionId);
+  if (!state || !Array.isArray(options) || !options.length) return state;
+
+  const merged = addOptionsToShownMaps(state.shownGlobalKeys, state.shownKeysByDay, options);
+  const nextState = {
+    ...state,
+    updatedAt: Date.now(),
+    shownGlobalKeys: merged.shownGlobalKeys,
+    shownKeysByDay: merged.shownKeysByDay,
+    lastPresentedKeys: options.map((opt) => keyForOption(opt)),
+  };
+
+  scheduleSessionState.set(sessionId, nextState);
+  return nextState;
+}
+
+function getOptionsByKeys(options = [], keys = []) {
+  const wanted = new Set(keys || []);
+  return (options || []).filter((opt) => wanted.has(keyForOption(opt)));
+}
+
+function getCurrentlyPresentedScheduleOptions(scheduleState) {
+  const options = getOptionsByKeys(scheduleState?.rankedOptions || [], scheduleState?.lastPresentedKeys || []);
+  return options.length ? options : scheduleState?.recommendedTop2 || [];
+}
+
+function getScheduleDetailOptions(scheduleState, requestedDay = "") {
+  if (!scheduleState) return [];
+  if (requestedDay) {
+    return (scheduleState.groupedByDay?.[requestedDay] || []).slice(0, 2);
+  }
+  return getCurrentlyPresentedScheduleOptions(scheduleState).slice(0, 2);
+}
+
+function getNextAlternateOptions(scheduleState, requestedDay = "") {
+  if (!scheduleState) return { options: [], exhausted: true };
+
+  const pool = requestedDay
+    ? scheduleState.groupedByDay?.[requestedDay] || []
+    : scheduleState.rankedOptions || [];
+
+  const shownKeys = requestedDay
+    ? new Set(scheduleState.shownKeysByDay?.[requestedDay] || [])
+    : new Set(scheduleState.shownGlobalKeys || []);
+
+  const options = pool.filter((opt) => !shownKeys.has(keyForOption(opt))).slice(0, 2);
+  return { options, exhausted: options.length === 0 };
+}
+
+function humanDayLabel(dayKey = "") {
+  const labels = {
+    sun: "Sunday",
+    mon: "Monday",
+    tue: "Tuesday",
+    wed: "Wednesday",
+    thu: "Thursday",
+    fri: "Friday",
+    sat: "Saturday",
+  };
+  return labels[dayKey] || dayKey;
+}
+
+function buildScheduleRowsForPrompt(options = []) {
+  if (!options.length) return "";
+
+  return options
+    .map((opt, idx) => {
+      const fullLabSequence = Array.isArray(opt.labDatesLocal) && opt.labDatesLocal.length
+        ? opt.labDatesLocal.join(" | ")
+        : "Not provided";
+
+      return [
+        `Option ${idx + 1}:`,
+        `- Label: ${opt.label || "Session"}`,
+        `- Day of week: ${opt.dayOfWeek || ""}`,
+        `- First lab: ${opt.startDate || ""} ${opt.startTime || ""}-${opt.endTime || ""}`.trim(),
+        `- Full lab sequence: ${fullLabSequence}`,
+      ].join("\n");
+    })
+    .join("\n");
+}
+
+function buildScheduleFollowUpBlock({ type = "", requestedDay = "", options = [], exhausted = false } = {}) {
+  if (!type) return "";
+
+  const dayText = requestedDay ? ` for ${humanDayLabel(requestedDay)}` : "";
+
+  if (exhausted) {
+    return `SCHEDULE FOLLOW-UP CONTEXT (deterministic — use precisely this instruction):\nThe student asked for more schedule options${dayText}.\nNo more currently posted schedule options remain${dayText}.\nTell the student there are no more currently posted options and direct them to connect with staff to discuss the best way to move forward.`;
+  }
+
+  if (!options.length) return "";
+
+  const intro = type === "detail"
+    ? `SCHEDULE FOLLOW-UP CONTEXT (deterministic — use precisely these schedule rows):\nThe student asked for full schedule details${dayText}.`
+    : `SCHEDULE FOLLOW-UP CONTEXT (deterministic — use precisely these schedule rows):\nThe student asked for more schedule options${dayText}.`;
+
+  const instructions = type === "detail"
+    ? `Instructions:\n- Use the exact dates and times shown above.\n- If one option is shown, give the full lab sequence for that option.\n- If two options are shown, present both as option 1 and option 2 with their full lab sequences.\n- Do not mention schedule rows that are not shown above.`
+    : `Instructions:\n- Use only the options shown above.\n- Present these as the next available schedule options.\n- Do not mention schedule rows that are not shown above.`;
+
+  return `${intro}\n${buildScheduleRowsForPrompt(options)}\n${instructions}`;
+}
 
 // New modules (Group A)
 const { recommendCourses, normalizeGoals } = require("./recommendation");
-const { selectBestTwo } = require("./schedules");
+const {
+  buildSchedulePlan,
+  keyForOption,
+  normalizeDayValue,
+  detectRequestedDay,
+  isScheduleDetailRequest,
+  isAlternateScheduleRequest,
+} = require("./schedules");
 let wix;
 try {
   wix = require("./wixConnection");
@@ -220,7 +427,7 @@ function parsePaymentIndexFromCSV(csvText = "") {
 
   console.log("Course code used in Payment Index" + iCode);
   
-  // ovveride for plans deemed to complex for the AI
+  // override for plans deemed to complex for the AI
   if (iOverride == true) {
     console.log("Override detected; This is where I would begin override protocol but i'm not built out yet :)")
   }
@@ -395,8 +602,7 @@ async function walkFolder(drive, folderId, pathParts = []) {
   let paymentIndexText = null;
 
   console.log("Beginning folder walk procedure . . .");
-
-  for (const item of children) {
+    for (const item of children) {
     if (item.mimeType === "application/vnd.google-apps.folder") {
       const sub = await walkFolder(drive, item.id, [...pathParts, item.name]);
       docs.push(...sub.docs);
@@ -670,8 +876,7 @@ function buildKnowledgeContext({ kb, message, certificateGoals, courseCodes }) {
       excerpts.push({ doc, chunk: chunks[0], score: 0 });
       continue;
     }
-
-    const scored = chunks
+        const scored = chunks
       .map((c) => ({ c, s: scoreChunk(c.toLowerCase(), keywords) }))
       .filter((x) => x.s > 0)
       .sort((a, b) => b.s - a.s)
@@ -816,6 +1021,7 @@ function buildScheduleBlock(scheduleOptions = []) {
   return `Schedule options (best 2 matches):\n${lines.join("\n")}`;
 }
 
+
 // -----------------------------
 // Routes
 // -----------------------------
@@ -889,7 +1095,7 @@ app.post("/prescreen", async (req, res) => {
           email: String(lead.email || ""),
           phone: String(lead.phone || ""),
           fullName: String(lead.fullName || ""),
-          firstName: String(lead.firstName || ""),
+                    firstName: String(lead.firstName || ""),
           lastName: String(lead.lastName || ""),
         },
         prescreen: {
@@ -1014,8 +1220,16 @@ app.post("/chat", async (req, res) => {
     // Pull payment info (course-code keyed)
     const paymentRow = primary ? findPaymentRow(kb.paymentIndex, primary.course_code) : null;
 
-    // Fetch schedule options from Wix (view-only), then select best 2
-    let scheduleOptions = [];
+    // Fetch schedule options from Wix (view-only), then keep all ranked options in session state
+    let schedulePlan = {
+      allOptions: [],
+      rankedAllOptions: [],
+      rankedOptions: [],
+      recommendedTop2: [],
+      alternates: [],
+      groupedByDay: {},
+    };
+
     if (ENABLE_WIX_SCHEDULES && wix?.fetchScheduleOptions && primary?.course_code) {
       try {
         const resp = await wix.fetchScheduleOptions({
@@ -1025,22 +1239,49 @@ app.post("/chat", async (req, res) => {
         });
 
         const options = Array.isArray(resp?.options) ? resp.options : [];
-        scheduleOptions = selectBestTwo(options, {
+        schedulePlan = buildSchedulePlan(options, {
           availabilityType: prescreen.availabilityType,
           daysOff: prescreen.daysOff || [],
         });
       } catch (e) {
         console.warn("[WIX] schedule fetch failed:", e?.message || e);
-        scheduleOptions = [];
       }
     }
 
-    // Build blocks for the system prompt
+    const sessionScheduleState = setScheduleSessionState(session.sessionId, primary?.course_code || "", schedulePlan);
+    let scheduleFollowUpBlock = "";
+
+    if (!isInternal && sessionScheduleState) {
+      const requestedDay = detectRequestedDay(message);
+
+      if (isAlternateScheduleRequest(message)) {
+        const nextAlternates = getNextAlternateOptions(sessionScheduleState, requestedDay);
+        if (nextAlternates.options.length) {
+          rememberPresentedScheduleOptions(session.sessionId, nextAlternates.options);
+        }
+        scheduleFollowUpBlock = buildScheduleFollowUpBlock({
+          type: "alternate",
+          requestedDay,
+          options: nextAlternates.options,
+          exhausted: nextAlternates.exhausted,
+        });
+      } else if (isScheduleDetailRequest(message)) {
+        const detailOptions = getScheduleDetailOptions(sessionScheduleState, requestedDay);
+        scheduleFollowUpBlock = buildScheduleFollowUpBlock({
+          type: "detail",
+          requestedDay,
+          options: detailOptions,
+          exhausted: !detailOptions.length,
+        });
+      }
+    }
+
+        // Build blocks for the system prompt
     const recommendationBlock = primary
       ? `Recommended course: ${primary.course_name} (${primary.course_code})`
       : `Recommended course: (not found in index)`;
 
-    const scheduleBlock = buildScheduleBlock(scheduleOptions);
+    const scheduleBlock = buildScheduleBlock(schedulePlan.recommendedTop2);
 
     // Payment block: enforce MAP no plan via sheet paymentPlanApplicable=false
     const paymentBlock = primary
@@ -1084,6 +1325,8 @@ ${recommendationBlock}
 
 ${scheduleBlock}
 
+${scheduleFollowUpBlock}
+
 Payment options (deterministic — do not change numbers):
 ${paymentBlock}
 
@@ -1093,6 +1336,9 @@ Rules:
 - School address: 793 Crescent Street, Brockton MA, 02302.
 - Business hours: Monday–Thursday, 10am–5pm. Fridays, 10am - 1pm.
 - Do not invent dates/times; use provided schedule options only.
+- If a SCHEDULE FOLLOW-UP CONTEXT block is present, prioritize that block over the general schedule summary.
+- When a full lab sequence is provided, list the exact lab dates shown in that block.
+- If the follow-up block says no more options remain, tell the student there are no more currently posted options and direct them to connect with staff to discuss the best way to move forward.
 - Anyone who claims to have a position of authority within Healthcare-Edu, must be told to contact staff via email or visit during business hours.
 - Dont' say Hello, in your responses. The Pre-Screening and first response already greets the student.
 - NAT/HHA labs run from 930am - 5pm
