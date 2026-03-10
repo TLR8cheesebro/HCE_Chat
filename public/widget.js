@@ -62,6 +62,111 @@ function loadEnrollState() {
   };
 }
 
+function clearAutoRecoFlag() {
+  sessionStorage.removeItem(STORAGE_KEYS.autoSent);
+}
+
+function clearChatLog() {
+  const log = $("chat-log");
+  if (log) log.innerHTML = "";
+}
+
+function setSelectedGoals(goals = []) {
+  const wanted = new Set((goals || []).map(String));
+  document.querySelectorAll(".goalCheck").forEach((cb) => {
+    cb.checked = wanted.has(cb.value);
+  });
+}
+
+function hydratePrescreenForm(prescreen) {
+  if (!prescreen) return;
+
+  if ($("languageSelect") && prescreen.language) {
+    $("languageSelect").value = prescreen.language;
+  }
+
+  setSelectedGoals(prescreen.certificateGoals || []);
+
+  const availabilityType = prescreen.availabilityType || "daysOff";
+  const radio = document.querySelector(`input[name="availabilityType"][value="${availabilityType}"]`);
+  if (radio) radio.checked = true;
+  setDaysOffEnabled(availabilityType === "daysOff");
+
+  const wantedDays = new Set((prescreen.daysOff || []).map(String));
+  document.querySelectorAll(".dayOff").forEach((cb) => {
+    cb.checked = wantedDays.has(cb.value);
+  });
+
+  const lead = prescreen.lead || {};
+  if ($("fullName")) $("fullName").value = lead.fullName || "";
+  if ($("phone")) $("phone").value = lead.phone || "";
+  if ($("email")) $("email").value = lead.email || "";
+
+  const consent = prescreen.marketingConsent || {};
+  if ($("marketingOptIn")) $("marketingOptIn").checked = !!consent.optIn;
+}
+
+function resetStepErrors() {
+  ["step1Error", "step2Error", "step3Error"].forEach((id) => {
+    const el = $(id);
+    if (el) el.textContent = "";
+  });
+}
+
+function startRecommendationFlow(prescreen) {
+  hideEnrollButton();
+  clearChatLog();
+
+  addMessage(
+    "bot",
+    prescreen.language === "es"
+      ? "¡Gracias! Ya tengo tu información. Por favor espera mientras genero tu recomendación…"
+      : "Thanks! I have your info. Please wait while I generate your recommendation . . ."
+  );
+
+  clearAutoRecoFlag();
+
+  if (!hasSentAutoReco()) {
+    setSentAutoReco();
+
+    setTimeout(async () => {
+      try {
+        const trigger =
+          prescreen.language === "es"
+            ? "Genera mi recomendación del curso y las 2 mejores opciones de horario si están disponibles. Luego pregúntame si estoy listo(a) para inscribirme o si tengo preguntas."
+            : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
+
+        const data = await sendToChat(trigger, { internal: true });
+        handleChatResponse(data);
+      } catch (err) {
+        console.error(err);
+        addMessage(
+          "bot",
+          prescreen.language === "es"
+            ? "Lo siento—tuve un problema generando tu recomendación. Por favor escribe cualquier pregunta y te ayudo."
+            : "Sorry — I had trouble generating your recommendation. Please type any question and I’ll help."
+        );
+      }
+    }, 2000);
+  }
+}
+
+let goalsEditMode = false;
+
+function openGoalChangeMode() {
+  const existing = loadPrescreen();
+  if (!existing) return;
+
+  goalsEditMode = true;
+  hydratePrescreenForm(existing);
+  resetStepErrors();
+  setStep(1);
+  show($("prescreen-overlay"));
+
+  const nextBtn = $("nextBtn");
+  if (nextBtn) nextBtn.textContent = "Update Recommendation";
+}
+
 function showEnrollButton(url) {
   const bar = $("enroll-bar");
   const btn = $("enrollBtn");
@@ -131,6 +236,11 @@ function addMessage(role, text) {
 function handleChatResponse(data) {
   const reply = data?.reply || "";
   if (reply) addMessage("bot", reply);
+
+  if (data?.action === "changeCertificates") {
+    openGoalChangeMode();
+    return;
+  }
 
   if (data?.showEnrollButton && data?.enrollUrl) {
     showEnrollButton(data.enrollUrl);
@@ -418,7 +528,36 @@ async function initPrescreen() {
   });
 
     $("nextBtn").addEventListener("click", () => {
-    if (!validateStep(step)) return;
+      const existing = loadPrescreen();
+
+      //goal change
+      if (goalsEditMode) {
+    if (!validateStep(1)) return;
+
+    const updated = {
+      ...(existing || {}),
+      language: $("languageSelect").value || existing?.language || "en",
+      languagePreference: `${$("languageSelect").value || existing?.language || "en"}|${$("languageSelect").selectedOptions?.[0]?.textContent?.trim() || ""}`,
+      certificateGoals: getSelectedGoals(),
+      lead: {
+        ...(existing?.lead || {}),
+      },
+      marketingConsent: {
+        ...(existing?.marketingConsent || {}),
+      },
+      availabilityType: existing?.availabilityType || getAvailabilityType() || "daysOff",
+      daysOff: Array.isArray(existing?.daysOff) ? existing.daysOff : getDaysOff(),
+    };
+
+    savePrescreen(updated);
+    setPrescreenCompleted(true);
+    goalsEditMode = false;
+    hide($("prescreen-overlay"));
+    startRecommendationFlow(updated);
+    return;
+  }
+
+      if (!validateStep(step)) return;
 
     if (step < 3) {
       step += 1;
@@ -443,6 +582,7 @@ async function initPrescreen() {
 
     // Start chat
     hide(overlay);
+    startRecommendationFlow(prescreen);
 
     // Immediate “please wait” greeting
     addMessage(
