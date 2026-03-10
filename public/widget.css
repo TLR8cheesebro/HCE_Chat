@@ -205,7 +205,39 @@ body {
   padding: 12px 14px;
   background: var(--muted2);
   border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
+
+.header-main {
+  min-width: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.header-btn {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.65);
+  color: #000000;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.header-btn:hover {
+  background: rgba(255,255,255,0.9);
+}
+
 .chat-header .brand {
   font-weight: 800;
   letter-spacing: 0.2px;
