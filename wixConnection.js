@@ -267,8 +267,8 @@ async function sendInboxMessage({ conversationId, direction, visibility, content
   console.log("[WIX REST] sendInboxMessage content:", JSON.stringify(content, null, 2));
   
   return restPost(REST_ENDPOINTS.inboxMessages, {
+    conversationId,
     message: {
-      conversationId,
       direction,
       visibility,
       content,
