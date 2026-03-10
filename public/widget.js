@@ -635,14 +635,6 @@ async function initPrescreen() {
     hide(overlay);
     startRecommendationFlow(prescreen);
 
-    // Immediate “please wait” greeting
-    addMessage(
-      "bot",
-      prescreen.language === "es"
-        ? "¡Gracias! Ya tengo tu información. Por favor espera mientras genero tu recomendación…"
-        : "Thanks! I have your info. Please wait while I generate your recommendation . . ."
-    );
-
     // After 3 seconds, auto-request the recommendation + schedule from the server
     if (!hasSentAutoReco()) {
       setSentAutoReco();
