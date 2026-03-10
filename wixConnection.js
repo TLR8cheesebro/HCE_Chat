@@ -245,15 +245,27 @@ async function getOrCreateConversationId(contactId) {
     participantId: { contactId },
   });
 
-  const convo = resp?.conversation || resp;
-  const conversationId = convo?.id || convo?._id || resp?.conversationId || null;
+  console.log("[WIX REST] getOrCreateConversation response:", JSON.stringify(resp, null, 2));
+
+  const conversationId =
+    resp?.conversation?.id ||
+    resp?.id ||
+    resp?.conversationId ||
+    null;
+
   if (!conversationId) {
-    throw new Error(`Could not resolve conversationId. Response: ${JSON.stringify(resp).slice(0, 300)}`);
+    throw new Error(
+      `Could not resolve conversationId. Response: ${JSON.stringify(resp).slice(0, 500)}`
+    );
   }
+
   return conversationId;
 }
 
 async function sendInboxMessage({ conversationId, direction, visibility, content }) {
+  console.log("[WIX REST] sendInboxMessage conversationId:", conversationId);
+  console.log("[WIX REST] sendInboxMessage content:", JSON.stringify(content, null, 2));
+  
   return restPost(REST_ENDPOINTS.inboxMessages, {
     message: {
       conversationId,
