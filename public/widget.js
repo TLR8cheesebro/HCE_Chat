@@ -8,7 +8,9 @@ const STORAGE_KEYS = {
   sessionId: "hedu_session_id",
   prescreen: "hedu_prescreen",
   prescreenCompleted: "hedu_prescreen_completed",
-  autoSent: "hedu_auto_reco_sent"
+  autoSent: "hedu_auto_reco_sent",
+  enrollUrl: "hedu_enroll_url",
+  enrollVisible: "hedu_enroll_visible"
 };
 
 function getOrCreateSessionId() {
@@ -44,6 +46,38 @@ function loadPrescreen() {
   const raw = sessionStorage.getItem(STORAGE_KEYS.prescreen);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
+}
+
+function saveEnrollState(url, visible) {
+  if (url) sessionStorage.setItem(STORAGE_KEYS.enrollUrl, url);
+  else sessionStorage.removeItem(STORAGE_KEYS.enrollUrl);
+
+  sessionStorage.setItem(STORAGE_KEYS.enrollVisible, visible ? "true" : "false");
+}
+
+function loadEnrollState() {
+  return {
+    url: sessionStorage.getItem(STORAGE_KEYS.enrollUrl) || "",
+    visible: sessionStorage.getItem(STORAGE_KEYS.enrollVisible) === "true",
+  };
+}
+
+function showEnrollButton(url) {
+  const bar = $("enroll-bar");
+  const btn = $("enrollBtn");
+  if (!bar || !btn || !url) return;
+
+  btn.dataset.url = url;
+  saveEnrollState(url, true);
+  show(bar);
+}
+
+function hideEnrollButton() {
+  const bar = $("enroll-bar");
+  const btn = $("enrollBtn");
+  if (btn) btn.dataset.url = "";
+  if (bar) hide(bar);
+  saveEnrollState("", false);
 }
 
 function $(id) { return document.getElementById(id); }
@@ -92,6 +126,15 @@ function addMessage(role, text) {
   div.textContent = text;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+}
+
+function handleChatResponse(data) {
+  const reply = data?.reply || "";
+  if (reply) addMessage("bot", reply);
+
+  if (data?.showEnrollButton && data?.enrollUrl) {
+    showEnrollButton(data.enrollUrl);
+  }
 }
 
 async function fetchConfig() {
@@ -294,12 +337,13 @@ async function sendToChat(message, meta) {
   if (!res.ok) {
     throw new Error(data?.error || "Chat request failed");
   }
-  return data.reply || "";
+  return data;
 }
 
 function initChatForm() {
   const form = $("chat-form");
   const input = $("chat-input");
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
@@ -309,13 +353,24 @@ function initChatForm() {
     addMessage("user", text);
 
     try {
-      const reply = await sendToChat(text);
-      addMessage("bot", reply);
+      const data = await sendToChat(text);
+      handleChatResponse(data);
     } catch (err) {
       addMessage("bot", "Sorry — something went wrong. Please try again.");
       console.error(err);
     }
   });
+
+  const enrollBtn = $("enrollBtn");
+  if (enrollBtn) {
+    enrollBtn.addEventListener("click", () => {
+      const url = enrollBtn.dataset.url || loadEnrollState().url;
+      if (!url) return;
+
+      hideEnrollButton();
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+  }
 }
 
 async function initPrescreen() {
@@ -409,8 +464,8 @@ async function initPrescreen() {
               : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
 
           // mark as internal so the server can avoid logging it as a user message in Wix Inbox
-          const reply = await sendToChat(trigger, { internal: true });
-          addMessage("bot", reply);
+          const data = await sendToChat(trigger, { internal: true });
+            handleChatResponse(data);
         } catch (err) {
           console.error(err);
           addMessage(
@@ -425,10 +480,14 @@ async function initPrescreen() {
   });
 } // ✅ CLOSES initPrescreen()
 
-// initiate (must be OUTSIDE initPrescreen)
 (async function main() {
   console.log("initiating Chat instance. . .");
   getOrCreateSessionId();
   await initPrescreen();
   initChatForm();
+
+  const enrollState = loadEnrollState();
+  if (enrollState.visible && enrollState.url) {
+    showEnrollButton(enrollState.url);
+  }
 })();
