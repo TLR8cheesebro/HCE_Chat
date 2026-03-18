@@ -321,7 +321,7 @@ app.use(express.static("public"));
 // Knowledge Base (Google Drive)
 // -----------------------------
 
-const KB_CACHE_TTL_MS = Number(process.env.KB_CACHE_TTL_MS || 5 * 60 * 1000); // 5 minutes
+const KB_CACHE_TTL_MS = Number(process.env.KB_CACHE_TTL_MS || 30 * 60 * 1000); // 30 minutes
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID || "";
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
 
