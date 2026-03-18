@@ -1089,8 +1089,7 @@ function buildScheduleBlock(scheduleOptions = []) {
 // -----------------------------
 
 app.get("/health", async (req, res) => {
-  const kb = await loadKnowledgeBase();
-  res.json({ status: "ok", kbSource: kb.source, kbLoadedAt: kb.loadedAt, kbError: kb.lastError });
+  res.json({ status: "ok" });
 });
 
 app.get("/config", async (req, res) => {
