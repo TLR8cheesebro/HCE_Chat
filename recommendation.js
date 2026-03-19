@@ -25,6 +25,10 @@ const CANONICAL_MAP = new Map([
   ["map", "medication administration program"],
   ["medication administration", "medication administration program"],
   ["medication administration program", "medication administration program"],
+  ["Medication Admin. Program", "medication admin. program"],
+  ["med. admin. program", "med. administration program"],
+  ["med. admin. program", "med admin program"],
+  ["medication admin program", "med admin. program"],
 
   ["phleb", "phlebotomy technician"],
   ["phlebotomy", "phlebotomy technician"],
@@ -47,7 +51,7 @@ function cleanLabel(value = "") {
   return String(value || "")
     .toLowerCase()
     .trim()
-    .replace(/\([^)]*\)/g, "")        // remove abbreviations in parentheses
+    .replace(/\([^)]*\)/g, "") // remove things like (CNA/NAT), (HHA), (MAP)
     .replace(/[\/_-]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/\btraining program\b/g, "")
@@ -114,9 +118,40 @@ function stripMeta(row) {
   return rest;
 }
 
+function isSingleProgram(row) {
+  return (row?._meta?.certificateCount || 0) === 1;
+}
+
+function isComboProgram(row) {
+  return (row?._meta?.certificateCount || 0) > 1;
+}
+
+function isCmaProgramRow(row) {
+  const included = row?._meta?.included || [];
+  return included.includes("clinical medical assistant");
+}
+
+function baseSort(a, b) {
+  if (a._meta.priority !== b._meta.priority) {
+    return a._meta.priority - b._meta.priority;
+  }
+  return String(a.course_code || "").localeCompare(String(b.course_code || ""));
+}
+
+/**
+ * @param {Array<Object>} courseIndexRows
+ * @param {Array<string>} certificateGoals
+ * @returns {{
+ *   recommended: Array<Object>,
+ *   normalizedGoals: Array<string>,
+ *   requiresStaffHandoff?: boolean,
+ *   matchType?: string
+ * }}
+ */
 function recommendCourses(courseIndexRows = [], certificateGoals = []) {
   const normalizedGoals = normalizeGoals(certificateGoals);
 
+  // CMA is explicitly not supported by the bot if user selected it
   if (isCMA(normalizedGoals)) {
     return {
       recommended: [],
@@ -126,21 +161,21 @@ function recommendCourses(courseIndexRows = [], certificateGoals = []) {
   }
 
   const goalSet = new Set(normalizedGoals);
+  const selectedGoalCount = goalSet.size;
 
+  // Score EVERY course row
   const scored = (courseIndexRows || []).map((row) => {
     const included = normalizeCertificatesIncluded(row);
     const includedSet = new Set(included);
 
     const overlapCount = countOverlap(goalSet, includedSet);
     const certificateCount = includedSet.size;
-
-    // exact perfect-match definition:
-    // same normalized certificate set, no extras, no missing certs
     const perfectMatch = setsEqual(goalSet, includedSet);
 
     return {
       ...row,
       _meta: {
+        included,
         overlapCount,
         certificateCount,
         perfectMatch,
@@ -149,15 +184,13 @@ function recommendCourses(courseIndexRows = [], certificateGoals = []) {
     };
   });
 
-  // PERFECT MATCHES WIN IMMEDIATELY
-  const perfectMatches = scored
+  // Exclude CMA rows from all normal recommendation paths
+  const nonCmaRows = scored.filter((row) => !isCmaProgramRow(row));
+
+  // 1) PERFECT MATCHES WIN IMMEDIATELY
+  const perfectMatches = nonCmaRows
     .filter((row) => row._meta.perfectMatch)
-    .sort((a, b) => {
-      if (a._meta.priority !== b._meta.priority) {
-        return a._meta.priority - b._meta.priority;
-      }
-      return String(a.course_code || "").localeCompare(String(b.course_code || ""));
-    });
+    .sort(baseSort);
 
   if (perfectMatches.length) {
     return {
@@ -167,38 +200,104 @@ function recommendCourses(courseIndexRows = [], certificateGoals = []) {
     };
   }
 
-  // Only if no perfect match exists, use greedy fallback
-  const ranked = scored
-    .filter((row) => row._meta.overlapCount > 0)
-    .sort((a, b) => {
-      if (a._meta.overlapCount !== b._meta.overlapCount) {
-        return b._meta.overlapCount - a._meta.overlapCount;
-      }
-      if (a._meta.certificateCount !== b._meta.certificateCount) {
-        return b._meta.certificateCount - a._meta.certificateCount;
-      }
-      if (a._meta.priority !== b._meta.priority) {
-        return a._meta.priority - b._meta.priority;
-      }
-      return String(a.course_code || "").localeCompare(String(b.course_code || ""));
-    });
+  // 2) If no perfect match exists:
+  // For 2 or 3 selected goals, prefer SINGLE-PROGRAM fallback
+  if (selectedGoalCount >= 2 && selectedGoalCount <= 3) {
+    const singleProgramMatches = nonCmaRows
+      .filter((row) => row._meta.overlapCount > 0)
+      .filter((row) => isSingleProgram(row))
+      .sort((a, b) => {
+        // For single-program fallback:
+        // first choose lowest priority, then alphabetical tiebreak
+        return baseSort(a, b);
+      });
 
-  if (ranked.length) {
-    return {
-      recommended: ranked.map(stripMeta),
-      normalizedGoals,
-      matchType: "partial",
-    };
+    if (singleProgramMatches.length) {
+      return {
+        recommended: singleProgramMatches.map(stripMeta),
+        normalizedGoals,
+        matchType: "single-fallback",
+      };
+    }
+
+    // If somehow no single-program rows overlap, use combo fallback as backup
+    const comboFallback = nonCmaRows
+      .filter((row) => row._meta.overlapCount > 0)
+      .sort((a, b) => {
+        if (a._meta.overlapCount !== b._meta.overlapCount) {
+          return b._meta.overlapCount - a._meta.overlapCount;
+        }
+        if (a._meta.certificateCount !== b._meta.certificateCount) {
+          return b._meta.certificateCount - a._meta.certificateCount;
+        }
+        return baseSort(a, b);
+      });
+
+    if (comboFallback.length) {
+      return {
+        recommended: comboFallback.map(stripMeta),
+        normalizedGoals,
+        matchType: "partial-combo-fallback",
+      };
+    }
   }
 
-  const fallback = [...scored].sort((a, b) => {
+  // 3) For 4+ selected goals, allow broader combo fallback
+  if (selectedGoalCount >= 4) {
+    const ranked = nonCmaRows
+      .filter((row) => row._meta.overlapCount > 0)
+      .sort((a, b) => {
+        if (a._meta.overlapCount !== b._meta.overlapCount) {
+          return b._meta.overlapCount - a._meta.overlapCount;
+        }
+        if (a._meta.certificateCount !== b._meta.certificateCount) {
+          return b._meta.certificateCount - a._meta.certificateCount;
+        }
+        return baseSort(a, b);
+      });
+
+    if (ranked.length) {
+      return {
+        recommended: ranked.map(stripMeta),
+        normalizedGoals,
+        matchType: "partial",
+      };
+    }
+  }
+
+  // 4) For 1 selected goal with no perfect match, prefer single-program overlap first
+  if (selectedGoalCount === 1) {
+    const singleGoalFallback = nonCmaRows
+      .filter((row) => row._meta.overlapCount > 0)
+      .sort((a, b) => {
+        // smaller, simpler programs should win here
+        if (a._meta.certificateCount !== b._meta.certificateCount) {
+          return a._meta.certificateCount - b._meta.certificateCount;
+        }
+        return baseSort(a, b);
+      });
+
+    if (singleGoalFallback.length) {
+      return {
+        recommended: singleGoalFallback.map(stripMeta),
+        normalizedGoals,
+        matchType: "single-goal-fallback",
+      };
+    }
+  }
+
+  // 5) Last-resort fallback:
+  // prefer non-CMA single-programs first, then broader non-CMA rows
+  const fallback = [...nonCmaRows].sort((a, b) => {
+    const aSingle = isSingleProgram(a) ? 0 : 1;
+    const bSingle = isSingleProgram(b) ? 0 : 1;
+    if (aSingle !== bSingle) return aSingle - bSingle;
+
     if (a._meta.certificateCount !== b._meta.certificateCount) {
-      return b._meta.certificateCount - a._meta.certificateCount;
+      return a._meta.certificateCount - b._meta.certificateCount;
     }
-    if (a._meta.priority !== b._meta.priority) {
-      return a._meta.priority - b._meta.priority;
-    }
-    return String(a.course_code || "").localeCompare(String(b.course_code || ""));
+
+    return baseSort(a, b);
   });
 
   return {
