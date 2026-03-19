@@ -145,6 +145,13 @@ function isScheduleDetailRequest(text = "") {
     "entire schedule",
     "whole schedule",
     "four lab",
+    "share lab schedule",
+    "share exact schedule",
+    "exact schedule",
+    "all of the schedule",
+    "complete schedule",
+    "practical lab schedule",
+    "practical lab days"
   ];
 
   if (detailPhrases.some((phrase) => lower.includes(phrase))) return true;
