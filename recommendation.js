@@ -22,11 +22,14 @@ const CANONICAL_MAP = new Map([
   ["home health aide training", "home health aide"],
   ["home health aide training program", "home health aide"],
 
+   // MAP
   ["map", "medication administration program"],
   ["medication administration", "medication administration program"],
   ["medication administration program", "medication administration program"],
-  ["Medication Admin. Program", "medication admin. program"],
-  ["med. admin. program", "med. administration program"],
+  ["medication admin", "medication administration program"],
+  ["medication admin.", "medication administration program"],
+  ["medication admin program", "medication administration program"],
+  ["medication admin. program", "medication administration program"],
   ["med. admin. program", "med admin program"],
   ["medication admin program", "med admin. program"],
 
