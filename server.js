@@ -233,7 +233,7 @@ function isReadyToEnrollIntent(message = "", meta = {}) {
   const lower = String(message || "").toLowerCase().trim();
   if (!lower) return false;
 
-  const phrases = [
+    const phrases = [
     "ready to enroll",
     "i'm ready to enroll",
     "im ready to enroll",
@@ -246,6 +246,29 @@ function isReadyToEnrollIntent(message = "", meta = {}) {
     "register me",
     "i'm ready",
     "im ready",
+    "proceed with enroll",
+    "proceed with enrollment",
+    "proceed",
+    "proceed with register",
+    "proceed with registration",
+    "proceed with payment",
+    "proceed with sign up", 
+    "ready to proceed",
+    "help me enroll",
+    "help me proceed",
+    "help me pay",
+    "help me get register",
+    "help me sign up",
+    "link to register",
+    "link to proceed",
+    "give me the link",
+    "give me link",
+    "give me payment link",
+    "give me enroll",
+    "give me enrollment link",
+    "give me registration link",
+    "give registration link",
+    "give enroll link",
     "how do i enroll",
     "how do i sign up",
     "how do i register",
