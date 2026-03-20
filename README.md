@@ -240,6 +240,7 @@ That means the project is very close to launch-ready. Most remaining work is pol
 - add a staff-handoff trigger for edge cases - This just needs to give a button to get onto stephanies calendly
 - refactor `server.js` into smaller modules once launch pressure is lower - (if I ever have time to prioritze speed)
 - add a waiting ellipsis or something while the server thinks about its response. (it has intentional dead air time built in to give people time to read)
+- make cahce timers ENV's in render so that I can change them easier.
 # M5. Final advice to future maintainer me 
 If this thing breaks, do not panic. Start with this question:
 > Is the bug in:
