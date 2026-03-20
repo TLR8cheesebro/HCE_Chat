@@ -78,7 +78,7 @@ The current `wixConnection.js` supports REST mode only if the Wix REST env vars 
 
 ---
 
-# 5. Google Drive knowledge base contract
+# 4. Google Drive knowledge base contract
 The KB folder is recursively walked. The app looks for:
 
 ## General docs
@@ -95,7 +95,7 @@ If you rename those, the parser may stop finding them.
 
 ---
 
-# 6. Course index spreadsheet contract
+# 5. Course index spreadsheet contract
 The course index is critical. Expected headers include:
 - `course_code`
 - `course_name`
@@ -120,7 +120,7 @@ This is the enrollment/payment URL used when the student is ready to enroll. Thi
 
 ---
 
-# 7. Payment index spreadsheet contract
+# 6. Payment index spreadsheet contract
 Expected headers currently include:
 - `course_code`
 - `tuition_price`
@@ -140,7 +140,7 @@ use the chatgpt thread  that is trained on making FAQ's in order to facillitate 
 
 This document outlines various procedures, checklists, and future plans for the project.
 
-## A1. Maintenance Playbook
+## M1. Maintenance Playbook
 
 ### If Recommendation Looks Wrong
 Check in this order:
@@ -263,4 +263,5 @@ If you debug it layer-by-layer, it is manageable.
 Good luck, future me.
 
 This read me was last updated 03/19/2026 at 8:10 pm
+
 
