@@ -146,8 +146,9 @@ This document outlines various procedures, checklists, and future plans for the 
 Check in this order:
 1. `recommendation.js`
 2. `certificates_included` values in the course index, The course index is intentionally case-lowered just to avoid any foolishness.
-3. Widget goal labels
+3. Widget goal labels - these should be case lowered always. 
 4. Course priorities
+5. If they are more deeply incorrect you may need to clear KB cache and rebuild in render to make sure you aren't testing on an old bug
 
 ### If Schedule Answers Are Vague or Wrong
 Check:
@@ -155,6 +156,8 @@ Check:
 2. Wix schedule endpoint normalization
 3. `schedules.js`
 4. `scheduleSessionState` logic in `server.js`
+5. this generally just requires explicit user input but for the most part it works
+6. change the keywords to activate extended schedule are in schedules.js
 
 ### If Enroll Button Does Not Appear
 Check:
@@ -162,6 +165,7 @@ Check:
 2. Ready-to-enroll phrase detection in `server.js`
 3. Widget `handleChatResponse(...)`
 4. Enroll button state in sessionStorage
+5. The keywords for this are in server.js around line 230
 
 ### If Wix Prescreen Automation Stops Working
 Check:
@@ -169,6 +173,7 @@ Check:
 2. `/prescreen` route
 3. Automation payload shape
 4. Whether `prescreenSent` is suppressing duplicates as expected
+5. By design it doesn't follow the user through multiple pages
 
 ### If Wix Chat Sync Stops Working
 Check:
@@ -220,22 +225,21 @@ Check:
      - Phleb only
      - EKG only
 ---
-# 18. Current launch-readiness notes
-- recommendation logic is working
-- connectivity is working
+# 18. Current launch-readiness notes (umm this is already launched ?)
+- recommendation logic is now working as of 03/19/2026 
+- connectivity is working and always was :)
 - schedule follow-up behavior is implemented
-- enrollment link flow exists
-- widget header actions exist
-That means the project is very close to launch-ready. Most remaining work is polish, QA, and future extensibility.
+- enrollment link flow exists and works fairly consistently, we do not want interrupting questions
+- widget header actions exist and work as intended
+That means the project is very close to launch-ready. Most remaining work is polish, QA, and future extensibility. (I already launched this, best data comes from live testing amirite ?)
 ---
 # 19. Future improvements (not required for launch)
 - move server-side session state to Redis
 - create a proper KB admin/status page
-- add analytics and funnel tracking
-- add a staff-handoff trigger for edge cases
-- improve logging / observability
-- create a cleaner separation between chatbot-specific Wix code and other site backend code
-- refactor `server.js` into smaller modules once launch pressure is lower---
+- add analytics and funnel tracking - this is on wix side and not on code side. 
+- add a staff-handoff trigger for edge cases - This just needs to give a button to get onto stephanies calendly
+- refactor `server.js` into smaller modules once launch pressure is lower - (if I ever have time to prioritze speed)
+- add a waiting ellipsis or something while the server thinks about its response. (it has intentional dead air time built in to give people time to read)
 # 20. Final advice to future maintainer me 
 If this thing breaks, do not panic. Start with this question:
 > Is the bug in:
