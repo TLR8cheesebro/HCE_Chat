@@ -261,3 +261,5 @@ This project looks big, but it is still basically:
 - one Wix integration layer 
 If you debug it layer-by-layer, it is manageable.
 Good luck, future me.
+
+This read me was last updated 03/19/2026 at 8:10 pm
