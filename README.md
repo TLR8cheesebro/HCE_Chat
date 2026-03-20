@@ -140,7 +140,7 @@ use the chatgpt thread  that is trained on making FAQ's in order to facillitate 
 
 This document outlines various procedures, checklists, and future plans for the project.
 
-## 16. Maintenance Playbook
+## A1. Maintenance Playbook
 
 ### If Recommendation Looks Wrong
 Check in this order:
@@ -197,7 +197,7 @@ Check:
 2. Whether the widget is actually iframe-embedded in that environment.
 ---
 
-## 17. Safe change checklist
+## M2. Safe change checklist
 
 **Before editing anything major:**
 1. Save copies of:
@@ -225,7 +225,7 @@ Check:
      - Phleb only
      - EKG only
 ---
-# 18. Current launch-readiness notes (umm this is already launched ?)
+# M3. Current launch-readiness notes (umm this is already launched ?)
 - recommendation logic is now working as of 03/19/2026 
 - connectivity is working and always was :)
 - schedule follow-up behavior is implemented
@@ -233,14 +233,14 @@ Check:
 - widget header actions exist and work as intended
 That means the project is very close to launch-ready. Most remaining work is polish, QA, and future extensibility. (I already launched this, best data comes from live testing amirite ?)
 ---
-# 19. Future improvements (not required for launch)
+# M4. Future improvements (not required for launch)
 - move server-side session state to Redis
 - create a proper KB admin/status page
 - add analytics and funnel tracking - this is on wix side and not on code side. 
 - add a staff-handoff trigger for edge cases - This just needs to give a button to get onto stephanies calendly
 - refactor `server.js` into smaller modules once launch pressure is lower - (if I ever have time to prioritze speed)
 - add a waiting ellipsis or something while the server thinks about its response. (it has intentional dead air time built in to give people time to read)
-# 20. Final advice to future maintainer me 
+# M5. Final advice to future maintainer me 
 If this thing breaks, do not panic. Start with this question:
 > Is the bug in:
 > - data,
@@ -263,3 +263,4 @@ If you debug it layer-by-layer, it is manageable.
 Good luck, future me.
 
 This read me was last updated 03/19/2026 at 8:10 pm
+
