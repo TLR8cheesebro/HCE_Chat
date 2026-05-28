@@ -357,7 +357,7 @@ const DEFAULT_LANGUAGES = [
 
 // Discount amount (compliance: always call it a "discount")
 const PAY_IN_FULL_DISCOUNT_AMOUNT = Number(process.env.PAY_IN_FULL_DISCOUNT_AMOUNT || 200);
-const DEFAULT_DOWN_PAYMENT_PERCENT = Number(process.env.DOWN_PAYMENT_PERCENT || 10);
+const DEFAULT_DOWN_PAYMENT_PERCENT = Number(process.env.DOWN_PAYMENT_PERCENT || 33);
 
 // Env toggles
 const ENABLE_WIX_SYNC = String(process.env.ENABLE_WIX_SYNC || "true").toLowerCase() === "true";
@@ -506,8 +506,10 @@ function parsePaymentIndexFromCSV(csvText = "") {
   const iTuition = idx("tuition_price");
   const iDiscount = idx("paidinfull_discountapplicable");
   const iPlanApplicable = idx("paymentplan_applicable");
-  const iWeeks = idx("planlength_weeks");
+  const iCount = idx("planlength");
   const iFreq = idx("frequency");
+  const iDownPercent = idx("downpayment_percent");
+  const iDownDollar = idx("downpayment_dollar");
   const iOverride = idx("CUSTOM_OVERRIDE");
 
   console.log("Course code used in Payment Index" + iCode);
@@ -517,11 +519,13 @@ function parsePaymentIndexFromCSV(csvText = "") {
     console.log("Override detected; This is where I would begin override protocol but i'm not built out yet :)")
   }
 
-  if (iCode < 0 || iTuition < 0 || iDiscount < 0 || iPlanApplicable < 0 || iWeeks < 0 || iFreq < 0) {
+  if (iCode < 0 || iTuition < 0 || iDiscount < 0 || iPlanApplicable < 0 || iCount < 0 || iFreq < 0) {
     return [];
   }
 
   const out = [];
+
+
   for (const r of rows.slice(1)) {
     const course_code = String(r[iCode] || "").trim();
     if (!course_code) continue;
@@ -531,16 +535,28 @@ function parsePaymentIndexFromCSV(csvText = "") {
 
     const discountApplicable = parseBool(r[iDiscount]);
     const paymentPlanApplicable = parseBool(r[iPlanApplicable]);
-    const planLengthWeeks = Number(String(r[iWeeks] || "").trim());
-    const frequency = String(r[iFreq] || "").trim().toLowerCase();
+
+    const planLength = Number(String(r[iCount] || "").trim());
+    const rawFrequency = String(r[iFreq] || "").trim().toLowerCase();
+
+    const downPaymentDollar = 
+      iDownDollar >= 0 ? Number(String(r[iDownDollar] || "").trim()) : null;
+
+    const downPaymentPercent =
+      iDownPercent >= 0 ? Number(String(r[iDownPercent] || "").trim()) : null;
 
     out.push({
       course_code,
       tuitionPrice: Math.round(tuitionPrice),
       discountApplicable,
       paymentPlanApplicable,
-      planLengthWeeks: Number.isFinite(planLengthWeeks) ? Math.round(planLengthWeeks) : 10,
-      frequency: frequency === "biweekly" ? "biweekly" : "weekly",
+      planLength: Number.isFinite(planLength) ? Math.round(planLength) : 10,
+      frequency: rawFrequency === "monthly"
+        ? "monthly" : rawFrequency === "biweekly"
+        ? "biweekly"
+        : "weekly",
+      downPaymentPercent: Number.isFinite(downPaymentPercent) ? downPaymentPercent : null,
+      downPaymentDollar: Number.isFinite(downPaymentDollar) ? downPaymentDollar : null,
     });
   }
   return out;
@@ -1009,13 +1025,20 @@ function formatMoney(n) {
   return `$${Math.round(v).toLocaleString("en-US")}`;
 }
 
-function computePaymentPlan({ tuitionPrice, planLengthWeeks, frequency }) {
-  const downPayment = Math.round((tuitionPrice * DEFAULT_DOWN_PAYMENT_PERCENT) / 100);
+function computePaymentPlan({ tuitionPrice, planLength, frequency, downPaymentPercent, downPaymentDollar }) {
+  let downPayment;
+
+  if (Number.isFinite(downPaymentDollar) && downPaymentDollar > 0) {
+    downPayment = Math.round(downPaymentDollar);
+  } else if (Number.isFinite(downPaymentPercent) && downPaymentPercent > 0) {
+    downPayment = Math.round(tuitionPrice * downPaymentPercent);
+  } else {
+    downPayment = Math.round((tuitionPrice * DEFAULT_DOWN_PAYMENT_PERCENT) / 100);
+  }
+
   const remaining = Math.max(0, tuitionPrice - downPayment);
 
-  // weekly -> N payments, biweekly -> approx N/2 payments (ceil)
-  const installments =
-    frequency === "biweekly" ? Math.max(1, Math.ceil(planLengthWeeks / 2)) : Math.max(1, planLengthWeeks);
+  const installments = Math.max(1, Number.isFinite(planLength) ? Math.round(planLength) - 1 : 2);
 
   const installmentAmount = Math.ceil(remaining / installments);
 
@@ -1024,6 +1047,7 @@ function computePaymentPlan({ tuitionPrice, planLengthWeeks, frequency }) {
     installments,
     installmentAmount,
     remaining,
+    frequency,
   };
 }
 
@@ -1046,13 +1070,15 @@ function buildPaymentBlock(paymentRow, courseMeta) {
   if (paymentPlanApplicable) {
     const plan = computePaymentPlan({
       tuitionPrice: tuition,
-      planLengthWeeks: paymentRow.planLengthWeeks || 10,
-      frequency: paymentRow.frequency || "weekly",
+      planLength: paymentRow.planLength || 3,
+      frequency: paymentRow.frequency || "monthly",
+      downPaymentDollar: paymentRow.downPaymentDollar,
+      downPaymentPercent: paymentRow.downPaymentPercent,
     });
 
     planText =
-      `Payment plan: ${DEFAULT_DOWN_PAYMENT_PERCENT}% down (${formatMoney(plan.downPayment)}), then ` +
-      `${plan.installments} ${paymentRow.frequency} payments of about ${formatMoney(plan.installmentAmount)}.`;
+      `Payment plan: a ${plan.downPaymentPercent}% down payment totaling ${formatMoney(plan.downPayment)}, then (${formatMoney(plan.installments)}) payments of` +
+      ` about ${plan.installmentAmount} ${paymentRow.frequency}.`;
   }
 
   return [
