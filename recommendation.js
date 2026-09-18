@@ -116,9 +116,90 @@ function safePriority(row) {
   return Number.isFinite(p) ? p : 999999;
 }
 
+function ordinalSuffix(day) {
+  const mod100 = day % 100;
+
+  if (mod100 >= 11 && mod100 <= 13) {
+    return `${day}th`;
+  }
+
+  switch (day % 10) {
+    case 1:
+      return `${day}st`;
+    case 2:
+      return `${day}nd`;
+    case 3:
+      return `${day}rd`;
+    default:
+      return `${day}th`;
+  }
+}
+
+function formatHumanSchedule(value = "") {
+  const text = String(value || "").trim();
+
+  /*
+   * Expected input:
+   * Fri 2026-10-02 09:30-15:30
+   *
+   * Also works if the leading weekday is missing:
+   * 2026-10-02 09:30-15:30
+   */
+  const match = text.match(
+    /^(?:[A-Za-z]{3}\s+)?(\d{4})-(\d{2})-(\d{2})(?:\s+\d{2}:\d{2}-\d{2}:\d{2})?$/
+  );
+
+  // If it isn't one of our schedule strings, leave it alone.
+  if (!match) {
+    return value;
+  }
+
+  const [, yearString, monthString, dayString] = match;
+
+  const year = Number(yearString);
+  const month = Number(monthString);
+  const day = Number(dayString);
+
+  // Noon UTC avoids timezone-related date shifting.
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const weekday = date.toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: "UTC",
+  });
+
+  const monthName = date.toLocaleDateString("en-US", {
+    month: "long",
+    timeZone: "UTC",
+  });
+
+  return `${weekday} ${monthName} ${ordinalSuffix(day)}, ${year}`;
+}
+
 function stripMeta(row) {
   const { _meta, ...rest } = row;
-  return rest;
+
+  const prettyRow = {};
+
+  for (const [key, value] of Object.entries(rest)) {
+    if (typeof value === "string") {
+      prettyRow[key] = formatHumanSchedule(value);
+    } else if (Array.isArray(value)) {
+      prettyRow[key] = value.map((item) =>
+        typeof item === "string"
+          ? formatHumanSchedule(item)
+          : item
+      );
+    } else {
+      prettyRow[key] = value;
+    }
+  }
+
+  return prettyRow;
 }
 
 function isSingleProgram(row) {
