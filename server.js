@@ -1340,7 +1340,7 @@ app.post("/chat", async (req, res) => {
       const handoffText =
         language === "es"
           ? "Gracias — el programa de Asistente Médico Clínico es un poco más complejo. Un asesor del curso te ayudará personalmente. ¿Prefieres llamada o mensaje de texto?"
-          : "Thanks — Clinical Medical Assistant is a bit more complex. A course advisor will help you personally. Do you prefer a phone call or text message?";
+          : "Thanks — Clinical Medical Assistant enrollments can only be completed in-person at the school. Interested students can come visit the school every monday from 3pm - 5pm.";
 
       return res.json({ reply: handoffText });
     }
