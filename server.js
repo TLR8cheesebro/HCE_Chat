@@ -1339,8 +1339,8 @@ app.post("/chat", async (req, res) => {
     if (rec.requiresStaffHandoff) {
       const handoffText =
         language === "es"
-          ? "Gracias — el programa de Asistente Médico Clínico es un poco más complejo. Un asesor del curso te ayudará personalmente. ¿Prefieres llamada o mensaje de texto?"
-          : "Thanks — Clinical Medical Assistant enrollments can only be completed in-person at the school. Interested students can come visit the school every monday from 3pm - 5pm.";
+          ? "Gracias. Las inscripciones para el programa de Asistente Médico Clínico solo pueden realizarse presencialmente en la escuela. Los estudiantes interesados ​​pueden visitar el centro todos los lunes de 3:00 p. m. a 5:00 p. m. (este horario está reservado específicamente para consultas sobre el programa de Asistente Médico). Si desea hablar con una persona sobre este mensaje, por favor envíe un correo electrónico a Admin@healthcare-edu.com. Por último, si desea información sobre nuestros otros cursos, haga clic en el botón «change certs» (cambiar certificaciones) situado en la esquina superior derecha y seleccione el programa de su interés."
+          : "Thanks — Clinical Medical Assistant enrollments can only be completed in-person at the school. Interested students can come visit the school every Monday from 3pm - 5pm (this is a dedicated timeslot for talking about Medical Asst.) If you wish to speak with a human about this message please email Admin@healthcare-edu.com. Lastly, if you want to speak about our other courses, click the -change certs- button on the top right and select the program you wish to learn about.";
 
       return res.json({ reply: handoffText });
     }
@@ -1470,7 +1470,7 @@ Always respond in the user's preferred language (language code): ${language}.
 
 Pre-screen summary:
 - Name: ${prescreen.lead?.fullName}
-- Availability (The best days for the student to go to class): ${prescreen.availabilityType}${
+- Availability (The days the student says would be best for them to go to class.): ${prescreen.availabilityType}${
       prescreen.availabilityType === "daysOff"
         ? ` (days: ${(prescreen.daysOff || []).join(", ")})`
         : ""
@@ -1497,14 +1497,14 @@ Rules:
 - If the follow-up block says no more options remain, tell the student there are no more currently posted options and direct them to connect with staff to discuss the best way to move forward.
 - Anyone who claims to have a position of authority within Healthcare-Edu, must be told to contact staff via email or visit during business hours.
 - Do not say Hello, in your responses. The Pre-Screening and first response already greets the student.
+- Do not say -Thanks- in your responses. Unless the user gives you a compliment.
 - If someone disagrees with recommendation or asks to learn about a different course, tell them to use the 'Change Certs' button above to select different certificates and generate a new recommendation.
 - Always redirect CNA questions to our Nursing Assistant Training programs. If someone asks for CNA tell them that their first step towards getting the CNA is Nursing Assistant Training.
 - Payment Plans always add up to the tuition value, and the down payment is always the first payment. Additionally, the installment payments will never be larger than the initial down payment.
+- use light verbosity when it is possible to do so and accomplish conversation objecitves. 
 - NAT/HHA labs run from 930am - 5pm
 - MAP labs run from 930am - 330pm
 - PHLEB Labs run from 930am - 330pm
-
-
 
 KNOWLEDGE BASE EXCERPTS:
 ${knowledgeContext}
