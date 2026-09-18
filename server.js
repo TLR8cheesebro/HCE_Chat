@@ -1510,7 +1510,7 @@ ${knowledgeContext}
 `.trim();
 
     const response = await client.responses.create({
-      model: process.env.OPENAI_MODEL || "gpt-5-mini",
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       input: [
         { role: "system", content: systemPrompt },
         { role: "user", content: [{ type: "input_text", text: String(message) }] },
