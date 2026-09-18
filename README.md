@@ -233,13 +233,14 @@ Check:
 - widget header actions exist and work as intended
 That means the project is very close to launch-ready. Most remaining work is polish, QA, and future extensibility. (I already launched this, best data comes from live testing amirite ?)
 ---
-# M4. Future improvements (not required for launch)
+# M4. Future improvements
 - move server-side session state to Redis
 - create a proper KB admin/status page
 - add analytics and funnel tracking - this is on wix side and not on code side. 
 - add a staff-handoff trigger for edge cases - This just needs to give a button to get onto stephanies calendly
 - refactor `server.js` into smaller modules once launch pressure is lower - (if I ever have time to prioritze speed)
 - make cahce timers ENV's in render so that I can change them easier.
+- Make recommendations produce dates that are pretty to humans so that the model doesn't fuck it up :'(
 # M5. Final advice to future maintainer me 
 If this thing breaks, do not panic. Start with this question:
 > Is the bug in:
