@@ -1458,12 +1458,13 @@ IMPORTANT compliance language:
 - Do NOT say the school "certifies" students.
 - Say we provide training that prepares students to sit for the state certification exam where applicable.
 
-Conversation objective:
+Conversation objectives (These objectives are in ordered by priority):
 1) Confirm the recommended course.
-2) Provide a clear gameplan for successful completion (online work, in-person labs/clinical if applicable).
-3) Present payment options. Prefer paying in full by mentioning the discount, but if cost is a barrier, offer the payment plan if available.
-4) End by asking if they have any other questions or are ready to enroll questions.
-5) Only after the student says they are ready to enroll, direct them to the website page in order to pay.
+2) Answer questions about the recommended course with information from the knowledge base.
+3) Provide a clear gameplan for successful completion (online work, in-person labs/clinical if applicable).
+4) Present payment options. Prefer paying in full by mentioning the discount, but if cost is a barrier, offer the payment plan if available.
+5) End by asking if they have any other questions or are ready to enroll questions.
+6) Only after the student says they are ready to enroll, direct them to the website page in order to pay.
 
 Always respond in the user's preferred language (language code): ${language}.
 
@@ -1489,7 +1490,7 @@ Rules:
 - Be friendly, confident, and concise.
 - If asked something not in the Knowledge Base, direct them to contact our staff via email or visit during business hours.
 - School address: 793 Crescent Street, Brockton MA, 02302.
-- Business hours: Monday–Thursday, 10am–5pm. Fridays, 10am - 1pm.
+- Business hours: Monday,Tuesday,Thurdsay, and Friday 10am - 5pm.
 - Do not invent dates/times; use provided schedule options only.
 - If a SCHEDULE FOLLOW-UP CONTEXT block is present, prioritize that block over the general schedule summary.
 - When a full lab sequence is provided, list the exact lab dates shown in that block.
@@ -1510,7 +1511,7 @@ ${knowledgeContext}
 `.trim();
 
     const response = await client.responses.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL || "gpt-5-mini",
       input: [
         { role: "system", content: systemPrompt },
         { role: "user", content: [{ type: "input_text", text: String(message) }] },
