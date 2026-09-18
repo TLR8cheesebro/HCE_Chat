@@ -134,6 +134,8 @@ function startRecommendationFlow(prescreen) {
 
   clearAutoRecoFlag();
 
+  showTypingIndicator();
+
   if (!hasSentAutoReco()) {
     setSentAutoReco();
 
@@ -145,8 +147,12 @@ function startRecommendationFlow(prescreen) {
             : "Generate my course recommendation and the 2 best schedule options if available. Then ask if I'm ready to enroll or have questions.";
 
         const data = await sendToChat(trigger, { internal: true });
+
+        hideTypingIndicator();
         handleChatResponse(data);
       } catch (err) {
+
+        hideTypingIndicator();
         console.error(err);
         addMessage(
           "bot",
@@ -239,6 +245,36 @@ function addMessage(role, text) {
   div.textContent = text;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+}
+
+let typingIndicator = null;
+
+function showTypingIndicator() {
+  if (typingIndicator) return;
+
+  const log = $("chat-log");
+  if (!log) return;
+
+  const div = document.createElement("div");
+  div.className = "msg bot typing-indicator";
+  div.setAttribute("aria-label", "Healthcare-Edu assistant is typing");
+
+  div.innerHTML = `
+    <span class="typing-dot"></span>
+    <span class="typing-dot"></span>
+    <span class="typing-dot"></span>
+  `;
+
+  typingIndicator = div;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function hideTypingIndicator() {
+  if (!typingIndicator) return;
+
+  typingIndicator.remove();
+  typingIndicator = null;
 }
 
 function handleChatResponse(data) {
@@ -479,10 +515,17 @@ function initChatForm() {
     input.value = "";
     addMessage("user", text);
 
+    showTypingIndicator();
+
     try {
       const data = await sendToChat(text);
+
+      hideTypingIndicator();
       handleChatResponse(data);
+
     } catch (err) {
+      hideTypingIndicator();
+
       addMessage("bot", "Sorry — something went wrong. Please try again.");
       console.error(err);
     }
@@ -515,12 +558,20 @@ function initChatForm() {
       }
 
       try {
+        
+        showTypingIndicator();
+        
         const data = await sendToChat(
           "I want to change my certificates.",
           { intent: "change_certificates" }
         );
+
+        hideTypingIndicator();
         handleChatResponse(data);
       } catch (err) {
+
+        hideTypingIndicator();
+
         console.error(err);
         openGoalChangeMode();
       }
